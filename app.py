@@ -33,7 +33,7 @@ tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
     "📈 ANÁLISIS Y DESCARGAS"
 ])
 
-# --- PESTAÑA 1: RADAR (Esqueleto para fases posteriores) ---
+# --- PESTAÑA 1: RADAR ---
 with tab_radar:
     st.header("🛸 Escáner de Perímetro Automático")
     col1, col2 = st.columns([1, 4])
@@ -45,52 +45,56 @@ with tab_radar:
         st.subheader("Consola de Observación")
         st.code("Esperando activación del Piloto Automático...")
 
-# --- PESTAÑA 2: REGISTROS HISTÓRICOS (Configuración Solicitada) ---
+# --- PESTAÑA 2: REGISTROS HISTÓRICOS (Sincronizado con tu Colab) ---
 with tab_registros:
     st.header("🔍 Buscador de Archivos TESS (NASA)")
-    st.write("Introduzca la numeración de la estrella para extraer sus productos de datos oficiales.")
+    st.write("Introduzca la numeración de la estrella para extraer sus productos de datos oficiales de TESScut.")
     
-    tic_id = st.text_input("ID de la Estrella (TIC):", placeholder="Ej: 289512179")
+    tic_id = st.text_input("ID de la Estrella (TIC):", placeholder="Ej: 55187830")
     
     if tic_id.strip():
         tic_input = tic_id.strip()
-        with st.spinner(f"Interrogando a los servidores MAST para TIC {tic_input}..."):
+        with st.spinner(f"Interrogando a los servidores MAST (TESScut) para TIC {tic_input}..."):
             try:
-                # Buscamos las curvas de luz en la base de datos de la NASA
-                search_result = lk.search_lightcurve(f"TIC {tic_input}", mission="TESS")
+                # 🚨 CORRECCIÓN CLAVE: Activamos search_tesscut en lugar de search_lightcurve
+                search_result = lk.search_tesscut(f"TIC {tic_input}")
                 
                 if len(search_result) == 0:
-                    st.warning(f"⚠️ No se han encontrado registros públicos para la estrella TIC {tic_input}.")
+                    st.warning(f"⚠️ No se han encontrado recortes de TESScut para la estrella TIC {tic_input}.")
                 else:
                     st.success(f"🎯 SearchResult containing {len(search_result)} data products.")
                     
-                    # Extraemos con precisión quirúrgica las columnas exactas que querías
-                    # Usamos bucles seguros para limpiar las unidades físicas (como 's' o 'arcsec')
+                    # Extraemos los datos exactos limpiando las unidades físicas para que la tabla sea idéntica
                     exptimes = [int(t.value) if hasattr(t, 'value') else int(t) for t in search_result.exptime]
                     distances = [round(float(d.value), 1) if hasattr(d, 'value') else round(float(d), 1) for d in search_result.distance]
+                    years = [int(y) for y in search_result.year]
                     
-                    # Construimos el DataFrame con la estructura exacta de tu ejemplo
+                    # Construimos la tabla con los nombres exactos de las columnas de tu Colab
                     df_registros = pd.DataFrame({
                         "mission": search_result.mission,
-                        "year": search_result.year,
+                        "year": years,
                         "author": search_result.author,
-                        "exptime (s)": exptimes,
+                        "exptime": exptimes,
                         "target_name": search_result.target_name,
-                        "distance (arcsec)": distances
+                        "distance": distances
                     })
                     
-                    # Desplegamos la tabla en pantalla gigante aprovechando el ancho del TV
+                    # Ordenamos cronológicamente por número de Sector para que quede perfecto en la tele
+                    df_registros['sector_num'] = df_registros['mission'].str.extract(r'Sector (\d+)').astype(int)
+                    df_registros = df_registros.sort_values(by='sector_num').drop(columns=['sector_num']).reset_index(drop=True)
+                    
+                    # Desplegamos la tabla a pantalla completa
                     st.dataframe(df_registros, use_container_width=True)
                     
             except Exception as e:
-                st.error(f"❌ Error de comunicación con el servidor de la NASA: {e}")
+                st.error(f"❌ Error de conexión con el servidor de la NASA: {e}")
 
-# --- PESTAÑA 3: MAPAS (Esqueleto para fases posteriores) ---
+# --- PESTAÑA 3: MAPAS ---
 with tab_mapas:
     st.header("🎯 Localización Estelar y Centroides")
     st.info("Módulo cartográfico en desarrollo.")
 
-# --- PESTAÑA 4: ANÁLISIS (Esqueleto para fases posteriores) ---
+# --- PESTAÑA 4: ANÁLISIS ---
 with tab_analisis:
     st.header("📊 Curva de Luz Avanzada con Filtro Orbital")
     st.info("Módulo fotométrico en desarrollo.")
