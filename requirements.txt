@@ -1,7 +1,8 @@
-streamlit
 lightkurve
-matplotlib
-numpy
 astroquery
-astropy
+matplotlib
 pandas
+numpy
+astropy
+tensorflow-cpu
+requests
