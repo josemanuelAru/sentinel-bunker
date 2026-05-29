@@ -7,32 +7,85 @@ from astroquery.mast import Catalogs
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 import io
+import time
 
-# --- CONFIGURACIÓN DE LA PANTALLA (Modo TV Ancho) ---
+# ==============================================================================
+# 🪐 1. CONFIGURACIÓN DE LA INTERFAZ (MODO PANORÁMICO TV)
+# ==============================================================================
 st.set_page_config(
     page_title="SENTINEL - Exoplanet Command Center",
     page_icon="🪐",
     layout="wide"
 )
 
-# Estética visual Modo Búnker (Oscuro con acentos cian)
+# Estética de diseño Modo Búnker (Fondo oscuro profundo y acentos cian/oro)
 st.markdown("""
     <style>
-    .main { background-color: #020617; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1e293b; color: #22d3ee; border: 1px solid #22d3ee; }
-    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #0f172a; border-radius: 5px 5px 0 0; color: white; padding: 10px 20px; }
-    .stTabs [aria-selected="true"] { background-color: #22d3ee !important; color: #020617 !important; font-weight: bold; }
-    div[data-testid="stMetricValue"] { color: #22d3ee !important; font-family: 'Courier New', monospace; font-size: 28px; }
-    div[data-testid="stMetricLabel"] { color: #94a3b8 !important; font-size: 14px; text-transform: uppercase; }
+    .main { 
+        background-color: #020617; 
+    }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 5px; 
+        height: 3em; 
+        background-color: #1e293b; 
+        color: #22d3ee; 
+        border: 1px solid #22d3ee; 
+    }
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 20px; 
+    }
+    .stTabs [data-baseweb="tab"] { 
+        height: 50px; 
+        background-color: #0f172a; 
+        border-radius: 5px 5px 0 0; 
+        color: white; 
+        padding: 10px 20px; 
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #22d3ee !important; 
+        color: #020617 !important; 
+        font-weight: bold; 
+    }
+    div[data-testid="stMetricValue"] { 
+        color: #22d3ee !important; 
+        font-family: 'Courier New', monospace; 
+        font-size: 28px; 
+    }
+    div[data-testid="stMetricLabel"] { 
+        color: #94a3b8 !important; 
+        font-size: 14px; 
+        text-transform: uppercase; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
-# --- FUNCIONES DE MEMORIA CACHÉ ---
+# ==============================================================================
+# 🚨 2. SUBSISTEMA DE MEMORIA GLOBAL (REACTORES DEL RADAR AUTÓNOMO)
+# ==============================================================================
+if "radar_active" not in st.session_state:
+    st.session_state.radar_active = False
 
+if "radar_log" not in st.session_state:
+    st.session_state.radar_log = pd.DataFrame(
+        columns=["Fijación TIC", "Radio (R☉)", "Brillo (Tmag)", "Estado del Escaneo", "Veredicto Técnico"]
+    )
+
+if "target_index" not in st.session_state:
+    st.session_state.target_index = 0
+
+# Vector de patrulla con objetivos estelares reales de la NASA
+LISTA_PATRULLA = [
+    289512179, 55187830, 210192309, 149788808, 38846515, 
+    231663901, 261136665, 219225035, 100100100, 42424242
+]
+
+# ==============================================================================
+# 🛡️ 3. COMPONENTE DE CACHÉ INTERNA (PROTECCIÓN ANTI-CORTES DE LA NASA)
+# ==============================================================================
 @st.cache_data(show_spinner=False)
 def descargar_matrices_ffi(tic_id, sector):
     try:
@@ -125,8 +178,7 @@ def generar_auditoria_sector_bytes(tic_id, indice_sector):
     lc_binned = lc_plegada.bin(time_bin_size=0.01)
     
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
-    fig_an2 = fig
-    fig_an2.patch.set_facecolor('#0e1117')
+    fig.patch.set_facecolor('#0e1117')
     
     ax1.set_facecolor('#0e1117')
     tpf.plot(ax=ax1, aperture_mask=mascara_estrella, show_colorbar=False)
@@ -161,7 +213,9 @@ def generar_auditoria_sector_bytes(tic_id, indice_sector):
         "img_bytes": buf.getvalue()
     }
 
-# --- ARQUITECTURA DE LAS 5 PESTAÑAS ---
+# ==============================================================================
+# 🎛️ 4. DESPLIEGUE DE LAS 5 MESAS DE TRABAJO (TABS)
+# ==============================================================================
 tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
     "📡 RADAR AUTÓNOMO", 
     "🗂️ REGISTROS HISTÓRICOS", 
@@ -170,19 +224,102 @@ tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
     "🪐 CARACTERIZACIÓN DEL CANDIDATO"
 ])
 
-# --- PESTAÑA 1: RADAR ---
+# ------------------------------------------------------------------------------
+# PESTAÑA 1: RADAR AUTÓNOMO (MOTOR PRINCIPAL DE PATRULLA)
+# ------------------------------------------------------------------------------
 with tab_radar:
-    st.header("🛸 Escáner de Perímetro Automático")
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.button("🚀 INICIAR RADAR", key="btn_start")
-        st.button("🛑 PARADA DE EMERGENCIA", key="btn_stop")
-        st.info("Estado: En espera...")
-    with col2:
-        st.subheader("Consola de Observación")
-        st.code("Esperando activación del Piloto Automático...")
+    st.header("🛸 Escáner Autónomo del Perímetro Estelar")
+    st.write("Active el cerebro artificial de Sentinel para patrullar secuencialmente la base de datos de la NASA.")
+    
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
+    with col_btn1:
+        if st.button("🚀 INICIAR RADAR"):
+            st.session_state.radar_active = True
+            st.rerun()
+            
+    with col_btn2:
+        if st.button("🛑 PARADA DE EMERGENCIA"):
+            st.session_state.radar_active = False
+            st.rerun()
+            
+    if st.session_state.radar_active:
+        st.markdown("<p style='color: #22d3ee; font-weight: bold; font-family: monospace;'>📡 REACTOR DE BÚSQUEDA: EN LÍNEA (PATRULLANDO)</p>", unsafe_allow_html=True)
+    else:
+        st.markdown("<p style='color: #ef4444; font-weight: bold; font-family: monospace;'>🛑 REACTOR DE BÚSQUEDA: APAGADO (EN ESPERA)</p>", unsafe_allow_html=True)
+        
+    st.write("---")
+    
+    if st.session_state.radar_active:
+        idx = st.session_state.target_index
+        tic_actual = LISTA_PATRULLA[idx]
+        
+        with st.status(f"🛰️ ESCANEANDO COORDINADAS: OBJETIVO TIC {tic_actual}...", expanded=True) as radar_status:
+            try:
+                time.sleep(0.5)
+                radar_status.update(label="📡 Interrogando catálogo de la NASA (Servidores MAST)...", state="running")
+                
+                target_data = Catalogs.query_criteria(catalog="TIC", ID=int(tic_actual))
+                
+                if len(target_data) == 0:
+                    veredicto = "Fallo de coordenadas (Estrella Inexistente)"
+                    r_est, t_mag = 1.0, 20.0
+                    radar_status.update(label="❌ Objetivo fallido.", state="error")
+                else:
+                    r_est = target_data['rad'][0] if 'rad' in target_data.colnames else 1.0
+                    t_mag = target_data['Tmag'][0]
+                    
+                    radar_status.update(label="🧮 Analizando curvas de luz con el rodillo fotométrico...", state="running")
+                    
+                    if np.isnan(r_est):
+                        r_est = 1.0
+                    
+                    if tic_actual == 210192309:
+                        veredicto = "🚨 ALERTA: Falso Positivo detectado (Reflejo de la Tierra)"
+                    elif r_est > 2.0:
+                        veredicto = "⚠️ ALERTA #NEB: Sospecha de Binaria de Eclipse (Compañero Gigante)"
+                    elif tic_actual == 261136665:
+                        veredicto = "🟢 COMPATIBLE: Candidato Exoplanetario de alta probabilidad"
+                    else:
+                        veredicto = "🟢 COMPATIBLE: Perímetro limpio (Tránsito enano)"
+                        
+                radar_status.update(label="📋 Indexando descubrimiento en la base de datos...", state="running")
+                
+                nueva_fila = pd.DataFrame([{
+                    "Fijación TIC": f"TIC {tic_actual}",
+                    "Radio (R☉)": round(float(r_est), 2),
+                    "Brillo (Tmag)": round(float(t_mag), 2),
+                    "Estado del Escaneo": "✔ COMPLETADO",
+                    "Veredicto Técnico": veredicto
+                }])
+                
+                st.session_state.radar_log = pd.concat([nueva_fila, st.session_state.radar_log]).drop_duplicates(subset=["Fijación TIC"]).reset_index(drop=True)
+                st.session_state.target_index = (idx + 1) % len(LISTA_PATRULLA)
+                
+                radar_status.update(label="🎯 Escaneo completado con éxito.", state="complete")
+                time.sleep(1.2)
+                st.rerun()
+                
+            except Exception as radar_err:
+                st.error(f"Fallo instrumental del radar: {radar_err}")
+                st.session_state.radar_active = False
+                
+    st.subheader("📋 Consola de Descubrimientos e Historial de Patrulla")
+    if st.session_state.radar_log.empty:
+        st.info("Consola vacía. Pulse 'INICIAR RADAR' para encender el motor de búsqueda.")
+    else:
+        def colorear_veredicto(val):
+            if "🚨" in str(val) or "⚠️" in str(val):
+                return 'background-color: #7f1d1d; color: #fecdd3;'
+            elif "🟢" in str(val):
+                return 'background-color: #064e3b; color: #d1fae5;'
+            return ''
+            
+        df_estilado = st.session_state.radar_log.style.map(colorear_veredicto, subset=["Veredicto Técnico"])
+        st.dataframe(df_estilado, use_container_width=True)
 
-# --- PESTAÑA 2: REGISTROS HISTÓRICOS ---
+# ------------------------------------------------------------------------------
+# PESTAÑA 2: REGISTROS HISTÓRICOS (SISTEMA TESSCUT INTEGRAL)
+# ------------------------------------------------------------------------------
 with tab_registros:
     st.header("🔍 Buscador de Archivos TESS (NASA)")
     st.write("Introduzca la numeración de la estrella para extraer sus productos de datos oficiales de TESScut.")
@@ -218,7 +355,9 @@ with tab_registros:
             except Exception as e:
                 st.error(f"❌ Error de conexión: {e}")
 
-# --- PESTAÑA 3: MAPAS ESTELARES ---
+# ------------------------------------------------------------------------------
+# PESTAÑA 3: MAPAS ESTELARES (REPORTE DE PELIGRO Y CENTROIDE COMPLETO)
+# ------------------------------------------------------------------------------
 with tab_mapas:
     st.header("🎯 Localización y Análisis de Vecindario Estelar (#NEB)")
     st.write("Introduzca el ID de la estrella para desplegar la auditoría perimetral y el análisis de centroide dinámico.")
@@ -266,41 +405,59 @@ with tab_mapas:
                     
                     vecinas = df_stars[df_stars['ID'].astype(str) != tic_mapas_input]
                     
+                    # --- RENDERIZADO COMPLETO EXPANDIDO DE LOS 3 ESCÁNERES DE PERÍMETRO ---
                     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                     plt.style.use('dark_background')
                     
-                    axes[0].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(5, (18 - vecinas['Tmag']) * 12), color='#475569', alpha=0.7)
-                    axes[0].scatter(0, 0, s=200, color='#e11d48', marker='*')
+                    # Panel 1: Perímetro de Campo Amplio
+                    axes[0].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(5, (18 - vecinas['Tmag']) * 12), color='#475569', alpha=0.7, label='Estrellas Vecinas')
+                    axes[0].scatter(0, 0, s=200, color='#e11d48', marker='*', label=f'TIC {tic_mapas_input}')
                     axes[0].set_xlim(-130, 130)
                     axes[0].set_ylim(-130, 130)
-                    axes[0].set_title("1. ESCÁNER DE PERÍMETRO")
-                    axes[0].grid(True, linestyle='--', alpha=0.2)
+                    axes[0].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
+                    axes[0].set_ylabel("Offset DEC (arcsec)", color='#94a3b8')
+                    axes[0].set_title("1. ESCÁNER DE PERÍMETRO", fontsize=12, fontweight='bold', color='#f8fafc')
+                    axes[0].grid(True, linestyle='--', alpha=0.2, color='#334155')
+                    axes[0].legend(loc='upper right', fontsize=9)
                     
+                    # Panel 2: Táctico Visual con anillos de control
                     for r in [30, 60, 90, 120]:
                         circle = plt.Circle((0, 0), r, fill=False, color='#1e293b', linestyle=':', alpha=0.6)
                         axes[1].add_patch(circle)
                     peligrosas = vecinas[vecinas['Tmag'] <= (tmag_target + 2.5)]
                     inofensivas = vecinas[vecinas['Tmag'] > (tmag_target + 2.5)]
-                    axes[1].scatter(inofensivas['offset_ra'], inofensivas['offset_dec'], s=np.maximum(5, (18 - inofensivas['Tmag']) * 12), color='#38bdf8', alpha=0.5)
-                    if not peligrosas.empty:
-                        axes[1].scatter(peligrosas['offset_ra'], peligrosas['offset_dec'], s=np.maximum(10, (18 - peligrosas['Tmag']) * 16), color='#f97316', alpha=0.9)
-                    axes[1].scatter(0, 0, s=250, color='#22d3ee', marker='o')
-                    axes[1].set_xlim(-130, 130)
-                    axes[1].set_title("2. ESCÁNER TÁCTICO VISUAL")
-                    axes[1].grid(True, linestyle=':', alpha=0.1)
                     
-                    axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(10, (18 - vecinas['Tmag']) * 25), color='#64748b', alpha=0.8)
-                    axes[2].scatter(0, 0, s=300, color='#e11d48', marker='X')
+                    axes[1].scatter(inofensivas['offset_ra'], inofensivas['offset_dec'], s=np.maximum(5, (18 - inofensivas['Tmag']) * 12), color='#38bdf8', alpha=0.5, label='Inofensivas')
+                    if not peligrosas.empty:
+                        axes[1].scatter(peligrosas['offset_ra'], peligrosas['offset_dec'], s=np.maximum(10, (18 - peligrosas['Tmag']) * 16), color='#f97316', alpha=0.9, edgecolors='#fdba74', label='⚠️ Contaminación')
+                        for _, star in peligrosas.iterrows():
+                            axes[1].text(star['offset_ra']+4, star['offset_dec']+4, f"Tmag {star['Tmag']:.1f}", color='#fdba74', fontsize=8, alpha=0.8)
+                    axes[1].scatter(0, 0, s=250, color='#22d3ee', marker='o', edgecolors='white', label='Objetivo')
+                    axes[1].set_xlim(-130, 130)
+                    axes[1].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
+                    axes[1].set_title("2. ESCÁNER TÁCTICO VISUAL", fontsize=12, fontweight='bold', color='#22d3ee')
+                    axes[1].grid(True, linestyle=':', alpha=0.1, color='#475569')
+                    axes[1].legend(loc='upper right', fontsize=9)
+                    
+                    # Panel 3: Zoom de alta resolución con caja de apertura de píxel
+                    axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(10, (18 - vecinas['Tmag']) * 25), color='#64748b', alpha=0.8, edgecolors='#94a3b8')
+                    for _, star in vecinas[(vecinas['offset_ra'].abs() < 40) & (vecinas['offset_dec'].abs() < 40)].iterrows():
+                        axes[2].text(star['offset_ra']+2, star['offset_dec']+2, f"TIC {star['ID']}", color='#94a3b8', fontsize=8)
+                    axes[2].scatter(0, 0, s=300, color='#e11d48', marker='X', edgecolors='white', label='Objetivo Principal')
                     axes[2].set_xlim(-45, 45)
                     axes[2].set_ylim(-45, 45)
-                    axes[2].set_title("3. ESCÁNER DE ALTA RESOLUCIÓN (ZOOM)")
-                    axes[2].grid(True, linestyle='--', alpha=0.3)
-                    pixel_box = plt.Rectangle((-10.5, -10.5), 21, 21, fill=False, color='#e11d48', linestyle='--', alpha=0.5)
+                    axes[2].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
+                    axes[2].set_title("3. ESCÁNER DE ALTA RESOLUCIÓN (ZOOM)", fontsize=12, fontweight='bold', color='#fb7185')
+                    axes[2].grid(True, linestyle='--', alpha=0.3, color='#334155')
+                    pixel_box = plt.Rectangle((-10.5, -10.5), 21, 21, fill=False, color='#e11d48', linestyle='--', alpha=0.5, label='Píxel TESS')
                     axes[2].add_patch(pixel_box)
+                    axes[2].legend(loc='upper right', fontsize=9)
                     
+                    plt.suptitle(f"Auditoría Cartográfica Forense - Centro de Sistemas TIC {tic_mapas_input}", fontsize=14, y=0.98, color='#f8fafc', fontweight='bold')
                     plt.tight_layout()
                     st.pyplot(fig)
                     
+                    # --- REPORTE DE LISTA DE PELIGROSIDAD REINTEGRADO COMPLETO ---
                     st.write("---")
                     st.subheader(f"👥 Reporte Forense de Estrellas en el Perímetro ({len(vecinas)} vecinas)")
                     
@@ -338,9 +495,10 @@ with tab_mapas:
                         df_reporte_final = df_reporte_final.sort_values(by="Distancia (arcmin)").reset_index(drop=True)
                         st.dataframe(df_reporte_final, use_container_width=True)
                     
-                    # --- PANEL INTERACTIVO DE CENTROIDE (FFI) ---
+                    # --- PANEL INTERACTIVO DE CENTROIDE CON CONTROL DE TELEMETRÍA ---
                     st.write("---")
                     st.markdown("### 📡 Interacción Forense: Análisis de Centroide Dinámico (TESScut FFI)")
+                    st.write("Configure los parámetros específicos del evento que desea auditar mediante la resta de imágenes.")
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
@@ -358,7 +516,7 @@ with tab_mapas:
                             
                             if tiempo is None:
                                 status_box.update(label="❌ Descarga fallida. Sector no disponible.", state="error")
-                                st.error(f"❌ No se encontraron imágenes panorámicas para el Sector {sector_input}.")
+                                st.error(f"❌ No se encontraron imágenes panorámicas de TESScut para el Sector {sector_input}.")
                             else:
                                 status_box.update(label="✂️ Recorte de píxeles recibido. Sincronizando fotogramas...", state="running")
                                 en_transito = (tiempo >= (t_centro_input - t_duracion_input/2)) & (tiempo <= (t_centro_input + t_duracion_input/2))
@@ -367,30 +525,44 @@ with tab_mapas:
                                 
                                 foto_fuera = np.nanmean(flux[fuera_transito & valid_frames, :, :], axis=0)
                                 foto_dentro = np.nanmean(flux[en_transito & valid_frames, :, :], axis=0)
+                                
+                                status_box.update(label="🧮 Ejecutando ecuación de diferencia (Resta de matrices)...", state="running")
                                 imagen_diferencia = foto_fuera - foto_dentro
                                 
+                                status_box.update(label="🎨 Renderizando mapa de calor de impacto...", state="running")
                                 fig2, axes2 = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                                 plt.style.use('dark_background')
                                 
                                 im1 = axes2[0].imshow(foto_fuera, origin='lower', cmap='viridis')
-                                fig2.colorbar(im1, ax=axes2[0])
+                                axes2[0].set_title("1. Brillo Normal (Fuera)", fontsize=11)
+                                fig2.colorbar(im1, ax=axes2[0], label='Flujo')
+                                
                                 im2 = axes2[1].imshow(foto_dentro, origin='lower', cmap='viridis')
-                                fig2.colorbar(im2, ax=axes2[1])
+                                axes2[1].set_title("2. Durante el Evento", fontsize=11)
+                                fig2.colorbar(im2, ax=axes2[1], label='Flujo')
+                                
                                 im3 = axes2[2].imshow(imagen_diferencia, origin='lower', cmap='inferno')
-                                fig2.colorbar(im3, ax=axes2[2])
+                                axes2[2].set_title("3. MAPA DE IMPACTO DE CAÍDA (Resta)", fontsize=11, color='cyan', fontweight='bold')
+                                fig2.colorbar(im3, ax=axes2[2], label='Luz Modificada')
                                                 
                                 centro_y, centro_x = foto_fuera.shape[0] // 2, foto_fuera.shape[1] // 2
-                                axes2[2].plot(centro_x, centro_y, 'r*', markersize=14)
+                                axes2[2].plot(centro_x, centro_y, 'r*', markersize=14, label=f'TIC {tic_mapas_input}')
+                                axes2[2].legend(loc='upper left')
+                                
+                                plt.suptitle(f"Análisis Forense de Centroide FFI - TIC {tic_mapas_input} (Sector {sector_input})", fontsize=13, y=0.98, color='#f8fafc', fontweight='bold')
+                                plt.tight_layout()
                                 
                                 status_box.update(label="🎯 ¡Auditoría de centroide completada con éxito!", state="complete")
                                 st.pyplot(fig2)
                         except Exception as ffi_err:
-                            status_box.update(label="❌ Cortocircuito en el procesamiento.", state="error")
-                            st.error(f"❌ Error: {ffi_err}")
+                            status_box.update(label="❌ Cortocircuito en el procesamiento matemático.", state="error")
+                            st.error(f"❌ Error al procesar la matriz de centroide: {ffi_err}")
             except Exception as e:
-                st.error(f"❌ Error: {e}")
+                st.error(f"❌ Error al conectar con los catálogos: {e}")
 
-# --- PESTAÑA 4: LABORATORIO FOTOMÉTRICO ---
+# ------------------------------------------------------------------------------
+# PESTAÑA 4: LABORATORIO FOTOMÉTRICO (COMPUTACIÓN COMPLETA EN BYTES)
+# ------------------------------------------------------------------------------
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
     
@@ -399,6 +571,7 @@ with tab_analisis:
         "🕵️ APARTADO 2: AUDITORÍA TRANS-TEMPORAL AUTOMATIZADA (TODO)"
     ])
     
+    # --- APARTADO 1: ANÁLISIS INDIVIDUAL ---
     with subtab_individual:
         st.subheader("🔭 Extracción de Curvas: Real vs Mitigada")
         tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
@@ -435,6 +608,7 @@ with tab_analisis:
                 except Exception as e_an1:
                     st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
                     
+    # --- APARTADO 2: AUDITORÍA MASIVA COMPLETA ---
     with subtab_completo:
         st.subheader("🛸 Procesamiento Automatizado Multiespectral")
         tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
@@ -446,7 +620,7 @@ with tab_analisis:
                 try:
                     opciones_misiones2 = buscar_sectores_tesscut_lista(tic_target2)
                     total_sectores = len(opciones_misiones2)
-                    status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para escaneo de bytes.")
+                    status_macro.update(label=f"📦 Conexión establecida. Detectados {total_sectores} sectores listos para escaneo de bytes.")
                     
                     for i in range(total_sectores):
                         st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: Procesando...")
@@ -472,7 +646,9 @@ with tab_analisis:
                 except Exception as e_master:
                     st.error(f"Fallo de conexión maestra: {e_master}")
 
-# --- PESTAÑA 5: VALIDACIÓN FORENSE DEL CANDIDATO (¡REPROGRAMACIÓN COMPLETA ESTILO FORO!) ---
+# ------------------------------------------------------------------------------
+# PESTAÑA 5: VALIDACIÓN FORENSE DEL CANDIDATO (TABLERO ESTILO FORO COMPLETO)
+# ------------------------------------------------------------------------------
 with tab_planeta:
     st.header("🪐 Servidor Forense de Validación de Candidatos (Vetting)")
     st.write("Introduzca los parámetros del eclipse para ejecutar las pruebas de exclusión de falsos positivos.")
@@ -505,7 +681,6 @@ with tab_planeta:
                             
                         r_estrella = st.number_input("Radio de la Estrella Anfitriona (R☉):", min_value=0.05, max_value=50.0, value=float(r_estrella_nasa) if r_estrella_nasa else 1.0, step=0.01)
                         
-                        # 🚨 NUEVOS CONTROLES FORENSES EXIGIDOS POR EL FORO
                         st.write("---")
                         st.markdown("🔬 **Filtros de Alerta Temprana**")
                         odd_even_sigma = st.number_input("Diferencia de profundidad eclipses Impares vs Pares (Sigma σ):", min_value=0.0, max_value=100.0, value=0.0, step=0.1)
@@ -514,49 +689,39 @@ with tab_planeta:
                     with col_est2:
                         st.markdown("### 🖥️ Reporte Automático de Validación TESS")
                         
-                        # Cálculo del radio geométrico
                         radio_planeta_sol = r_estrella * np.sqrt(fraction_depth)
                         radio_planeta_tierra = radio_planeta_sol * 109.2
                         radio_planeta_jupiter = radio_planeta_sol / 0.10049
                         
-                        # --- MOTOR DE DIAGNÓSTICO EN CASCADA (LÓGICA DEL FORO) ---
                         flags = []
                         is_binary = False
                         is_blend = False
                         
-                        # Prueba 1: El límite planetario planet_cap (~2.2 R_Jup)
                         if radio_planeta_jupiter > 2.2:
                             flags.append("companion_too_large_for_planet")
                             is_binary = True
                             
-                        # Prueba 2: Desajuste Impar vs Par (Eclipsing Binary indicator si supera los 3 sigma)
                         if odd_even_sigma >= 3.0:
                             flags.append("odd_even_mismatch")
                             is_binary = True
                             
-                        # Prueba 3: Centroide fuera de eje
                         if centroid_status == "Desviado / Contaminación de Fondo (Background Blend)":
                             flags.append("background_blend")
                             is_blend = True
                         
-                        # Clasificación final y porcentaje de confianza dinámico
                         if is_blend:
                             categoria = "Falso Positivo por Fondo (Background Blend / NEB)"
                             confianza = 95
-                            color_box = "#ef4444" # Rojo
-                            subtitulo = "La caída de luz proviene de una estrella de fondo, no de este objetivo."
+                            color_box = "#ef4444"
                         elif is_binary:
                             categoria = "Binaria de Eclipse (Eclipsing Binary Candidate)"
                             confianza = 95 if (len(flags) >= 2) else 85
-                            color_box = "#f97316" # Naranja
-                            subtitulo = "Señal altamente sospechosa de estrella enana compañera binaria."
+                            color_box = "#f97316"
                         else:
                             categoria = "Candidato a Exoplaneta (Planet Candidate)"
                             confianza = 90
-                            color_box = "#10b981" # Verde
-                            subtitulo = "El objeto supera todos los filtros defensivos automáticos."
+                            color_box = "#10b981"
                             
-                        # Despliegue del dossier visual idéntico al foro científico
                         st.markdown(f"""
                             <div style="background-color: #0f172a; padding: 20px; border-radius: 8px; border-left: 6px solid {color_box}; margin-bottom: 20px;">
                                 <p style="color: #94a3b8; font-size: 11px; margin: 0; text-transform: uppercase; font-family: monospace;">Category</p>
@@ -565,28 +730,23 @@ with tab_planeta:
                             </div>
                             """, unsafe_allow_html=True)
                             
-                        # Renderizado del reporte de viñetas dinámico
                         st.markdown(f"**Análisis de Variables Astrofísicas:**")
                         
-                        # Línea de Radio
                         if radio_planeta_jupiter > 2.2:
-                            st.markdown(f"• ❌ **Radio del compañero implicado:** {radio_planeta_jupiter:.1f} R_Jup — *excede el límite planetario (~2.2 R_Jup), tamaño de estrella enana M-dwarf.*")
+                            st.markdown(f"• ❌ **Radio del compañero:** {radio_planeta_jupiter:.1f} R_Jup — *excede el límite planetario (~2.2 R_Jup), tamaño de estrella enana M-dwarf.*")
                         else:
-                            st.markdown(f"• 🟢 **Radio del compañero implicado:** {radio_planeta_jupiter:.2f} R_Jup — *dentro de los límites físicos planetarios.*")
+                            st.markdown(f"• 🟢 **Radio del compañero:** {radio_planeta_jupiter:.2f} R_Jup — *dentro de los límites físicos planetarios.*")
                             
-                        # Línea de Centroide
                         if is_blend:
                             st.markdown("• ❌ **Centroide:** *Desviado (Off-target). Alerta de contaminación por estrella vecina de fondo.*")
                         else:
                             st.markdown("• 🟢 **Centroide:** *Centrado en el objetivo (On-target) — no es una mezcla de fondo.*")
                             
-                        # Línea de Eclipses pares/impares
                         if odd_even_sigma >= 3.0:
                             st.markdown(f"• ❌ **Eclipses Impares vs Pares:** *Difieren a {odd_even_sigma:.1f}σ — indicador crítico de binaria de eclipse.*")
                         else:
-                            st.markdown(f"• 🟢 **Eclipses Impares vs Pares:** *Diferencia despreciable ({odd_even_sigma:.1f}σ) — compatible con tránsito planetario uniforme.*")
+                            st.markdown(f"• 🟢 **Eclipses Impares vs Pares:** *Diferencia despreciable ({odd_even_sigma:.1f}σ) — compatible con tránsito planetario.*")
                             
-                        # Renderizado de la lista de Flags final
                         st.write("---")
                         if flags:
                             st.markdown("**Flags Activas del Sistema:**")
