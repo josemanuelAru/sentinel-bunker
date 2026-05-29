@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# --- 1. CONFIGURACIÓN DE LA PANTALLA (Modo TV) ---
+# --- CONFIGURACIÓN DE LA PANTALLA (Modo TV) ---
 st.set_page_config(
     page_title="SENTINEL - Exoplanet Command Center",
     page_icon="🪐",
@@ -25,7 +25,7 @@ st.markdown("""
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
-# --- 2. ARQUITECTURA DE PESTAÑAS ---
+# --- ARQUITECTURA DE PESTAÑAS ---
 tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
     "📡 RADAR AUTÓNOMO", 
     "🗂️ REGISTROS HISTÓRICOS", 
@@ -33,7 +33,7 @@ tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
     "📈 ANÁLISIS Y DESCARGAS"
 ])
 
-# --- PESTAÑA 1: RADAR (Esqueleto para la Fase 4) ---
+# --- PESTAÑA 1: RADAR (Esqueleto para fases posteriores) ---
 with tab_radar:
     st.header("🛸 Escáner de Perímetro Automático")
     col1, col2 = st.columns([1, 4])
@@ -45,52 +45,52 @@ with tab_radar:
         st.subheader("Consola de Observación")
         st.code("Esperando activación del Piloto Automático...")
 
-# --- PESTAÑA 2: REGISTROS HISTÓRICOS (¡YA FUNCIONAL!) ---
+# --- PESTAÑA 2: REGISTROS HISTÓRICOS (Configuración Solicitada) ---
 with tab_registros:
     st.header("🔍 Buscador de Archivos TESS (NASA)")
-    st.write("Introduzca el identificador de la estrella para comprobar cuántas veces la ha fotografiado el satélite.")
+    st.write("Introduzca la numeración de la estrella para extraer sus productos de datos oficiales.")
     
-    tic_id = st.text_input("ID de la Estrella (Solo los números del TIC):", placeholder="Ej: 210192309")
+    tic_id = st.text_input("ID de la Estrella (TIC):", placeholder="Ej: 289512179")
     
-    if tic_input := tic_id.strip():
+    if tic_id.strip():
+        tic_input = tic_id.strip()
         with st.spinner(f"Interrogando a los servidores MAST para TIC {tic_input}..."):
             try:
-                # Buscamos todas las curvas de luz disponibles en la base de datos de la NASA
+                # Buscamos las curvas de luz en la base de datos de la NASA
                 search_result = lk.search_lightcurve(f"TIC {tic_input}", mission="TESS")
                 
                 if len(search_result) == 0:
                     st.warning(f"⚠️ No se han encontrado registros públicos para la estrella TIC {tic_input}.")
                 else:
-                    st.success(f"🎯 ¡Conexión establecida! Se han detectado {len(search_result)} registros disponibles.")
+                    st.success(f"🎯 SearchResult containing {len(search_result)} data products.")
                     
-                    # Extraemos los datos de los sectores para mostrárselos ordenados en su TV
-                    sectores = search_result.table['sequence_number'].tolist()
-                    autores = search_result.table['author'].tolist()
-                    tiempos_exposicion = search_result.table['exptime'].tolist()
+                    # Extraemos con precisión quirúrgica las columnas exactas que querías
+                    # Usamos bucles seguros para limpiar las unidades físicas (como 's' o 'arcsec')
+                    exptimes = [int(t.value) if hasattr(t, 'value') else int(t) for t in search_result.exptime]
+                    distances = [round(float(d.value), 1) if hasattr(d, 'value') else round(float(d), 1) for d in search_result.distance]
                     
-                    # Creamos un mapa de datos limpio (Dataframe)
+                    # Construimos el DataFrame con la estructura exacta de tu ejemplo
                     df_registros = pd.DataFrame({
-                        "Sector Disponible": sectores,
-                        "Procesado Por": autores,
-                        "Cadencia (Segundos)": tiempos_exposicion
+                        "mission": search_result.mission,
+                        "year": search_result.year,
+                        "author": search_result.author,
+                        "exptime (s)": exptimes,
+                        "target_name": search_result.target_name,
+                        "distance (arcsec)": distances
                     })
                     
-                    # Ordenamos por sector para llevar un orden cronológico
-                    df_registros = df_registros.sort_values(by="Sector Disponible").reset_index(drop=True)
-                    
-                    # Desplegamos la tabla en pantalla gigante
-                    st.subheader("📋 Historial de Observaciones del Satélite")
+                    # Desplegamos la tabla en pantalla gigante aprovechando el ancho del TV
                     st.dataframe(df_registros, use_container_width=True)
                     
             except Exception as e:
-                st.error(f"❌ Error de conexión con el servidor de la NASA: {e}")
+                st.error(f"❌ Error de comunicación con el servidor de la NASA: {e}")
 
-# --- PESTAÑA 3: MAPAS (Esqueleto para la Fase 3) ---
+# --- PESTAÑA 3: MAPAS (Esqueleto para fases posteriores) ---
 with tab_mapas:
     st.header("🎯 Localización Estelar y Centroides")
-    st.info("Módulo cartográfico en desarrollo. Próxima fase.")
+    st.info("Módulo cartográfico en desarrollo.")
 
-# --- PESTAÑA 4: ANÁLISIS (Esqueleto para la Fase 2) ---
+# --- PESTAÑA 4: ANÁLISIS (Esqueleto para fases posteriores) ---
 with tab_analisis:
     st.header("📊 Curva de Luz Avanzada con Filtro Orbital")
-    st.info("Módulo fotométrico en desarrollo. Pendiente de integración de filtro.")
+    st.info("Módulo fotométrico en desarrollo.")
