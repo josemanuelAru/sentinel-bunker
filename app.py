@@ -22,6 +22,8 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 20px; }
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #0f172a; border-radius: 5px 5px 0 0; color: white; padding: 10px 20px; }
     .stTabs [aria-selected="true"] { background-color: #22d3ee !important; color: #020617 !important; font-weight: bold; }
+    div[data-testid="stMetricValue"] { color: #22d3ee !important; font-family: 'Courier New', monospace; font-size: 28px; }
+    div[data-testid="stMetricLabel"] { color: #94a3b8 !important; font-size: 14px; text-transform: uppercase; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -36,7 +38,7 @@ tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
     "📈 ANÁLISIS Y DESCARGAS"
 ])
 
-# --- PESTAÑA 1: RADAR (Esqueleto para fases posteriores) ---
+# --- PESTAÑA 1: RADAR ---
 with tab_radar:
     st.header("🛸 Escáner de Perímetro Automático")
     col1, col2 = st.columns([1, 4])
@@ -82,57 +84,68 @@ with tab_registros:
             except Exception as e:
                 st.error(f"❌ Error de conexión: {e}")
 
-# --- PESTAÑA 3: MAPAS ESTELARES (¡NUEVO MÓDULO TOTALMENTE OPERATIVO!) ---
+# --- PESTAÑA 3: MAPAS ESTELARES CON DOSSIER FÍSICO ---
 with tab_mapas:
     st.header("🎯 Localización y Análisis de Vecindario Estelar (#NEB)")
-    st.write("Introduzca el ID de la estrella para desplegar la auditoría perimetral y detectar posibles impostores brillantes.")
+    st.write("Introduzca el ID de la estrella para desplegar la auditoría perimetral y sus propiedades físicas.")
     
     tic_id_mapas = st.text_input("ID de la Estrella (TIC):", placeholder="Ej: 55187830", key="txt_id_mapas")
     
     if tic_id_mapas.strip():
         tic_input = tic_id_mapas.strip()
-        with st.spinner(f"Escaneando coordenadas celestes para TIC {tic_input}..."):
+        with st.spinner(f"Escaneando coordenadas y parámetros físicos para TIC {tic_input}..."):
             try:
-                # 1. Consultamos los datos de nuestra estrella objetivo en el catálogo de la NASA
+                # 1. Consultamos los datos de la estrella objetivo en el catálogo TIC
                 target_data = Catalogs.query_criteria(catalog="TIC", ID=int(tic_input))
                 
                 if len(target_data) == 0:
                     st.error(f"❌ La estrella TIC {tic_input} no existe en el catálogo oficial de la misión.")
                 else:
+                    # Extracción segura de coordenadas y brillo
                     ra_target = target_data['ra'][0]
                     dec_target = target_data['dec'][0]
                     tmag_target = target_data['Tmag'][0]
                     
-                    st.sidebar.markdown(f"### 🛡️ Objetivo Localizado")
-                    st.sidebar.write(f"**RA:** {ra_target:.5f}°")
-                    st.sidebar.write(f"**DEC:** {dec_target:.5f}°")
-                    st.sidebar.write(f"**Brillo (Tmag):** {tmag_target:.2f}")
+                    # 🚨 NUEVO: Extracción quirúrgica de parámetros físicos con control de datos nulos (NaN)
+                    rad_estelar = target_data['rad'][0] if 'rad' in target_data.colnames and not np.isnan(target_data['rad'][0]) else None
+                    masa_estelar = target_data['mass'][0] if 'mass' in target_data.colnames and not np.isnan(target_data['mass'][0]) else None
+                    temp_efectiva = target_data['teff'][0] if 'teff' in target_data.colnames and not np.isnan(target_data['teff'][0]) else None
+                    distancia_pc = target_data['d'][0] if 'd' in target_data.colnames and not np.isnan(target_data['d'][0]) else None
+                    luminosidad = target_data['lum'][0] if 'lum' in target_data.colnames and not np.isnan(target_data['lum'][0]) else None
+
+                    # 📋 DESPLIEGUE DEL DOSSIER FÍSICO (Paneles Superiores)
+                    st.markdown("### 📋 Dossier Astrofísico de la Estrella")
+                    m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
                     
-                    # 2. Rastreamos el vecindario en un radio de 120 segundos de arco (2 minutos)
+                    m_col1.metric("Radio Estelar", f"{rad_estelar:.2f} R☉" if rad_estelar else "N/D")
+                    m_col2.metric("Masa Estelar", f"{masa_estelar:.2f} M☉" if masa_estelar else "N/D")
+                    m_col3.metric("Temperatura", f"{int(temp_efectiva)} K" if temp_efectiva else "N/D")
+                    m_col4.metric("Distancia", f"{distancia_pc:.1f} pc" if distancia_pc else "N/D")
+                    m_col5.metric("Luminosidad", f"{luminosidad:.2f} L☉" if luminosidad else "N/D")
+                    m_col6.metric("Brillo TESS", f"{tmag_target:.2f} mag")
+                    
+                    st.write("---")
+
+                    # 2. Rastreamos el vecindario en un radio de 120 segundos de arco
                     coord_centro = SkyCoord(ra_target, dec_target, unit="deg")
                     stars_table = Catalogs.query_region(coord_centro, radius=120*u.arcsec, catalog="TIC")
                     df_stars = stars_table.to_pandas()
-                    
-                    # Limpiamos estrellas sin brillo registrado
                     df_stars['Tmag'] = df_stars['Tmag'].fillna(20.0)
                     
-                    # Calculamos la distancia física en segundos de arco (Offsets) desde nuestro objetivo
                     df_stars['offset_ra'] = (df_stars['ra'] - ra_target) * 3600 * np.cos(np.radians(dec_target))
                     df_stars['offset_dec'] = (df_stars['dec'] - dec_target) * 3600
                     
-                    # Separamos nuestro objetivo de sus vecinas para los gráficos
-                    objetivo = df_stars[df_stars['ID'].astype(str) == tic_input]
                     vecinas = df_stars[df_stars['ID'].astype(str) != tic_input]
                     
-                    # 3. CONSTRUCCIÓN DE LOS 3 GRÁFICOS COMPAÑEROS (Optimizado para TV)
+                    # 3. CONSTRUCCIÓN DE LOS 3 GRÁFICOS COMPAÑEROS
                     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                     plt.style.use('dark_background')
                     
-                    # --- PANEL 1: ESCÁNER DE PERÍMETRO ESTÁNDAR ---
+                    # Panel 1: Escáner Perímetro
                     axes[0].scatter(vecinas['offset_ra'], vecinas['offset_dec'], 
                                     s=np.maximum(5, (18 - vecinas['Tmag']) * 12), 
                                     color='#475569', alpha=0.7, label='Estrellas Vecinas')
-                    axes[0].scatter(0, 0, s=200, color='#e11d48', marker='*', label=f'TIC {tic_input} (Objetivo)')
+                    axes[0].scatter(0, 0, s=200, color='#e11d48', marker='*', label=f'TIC {tic_input}')
                     axes[0].set_xlim(-130, 130)
                     axes[0].set_ylim(-130, 130)
                     axes[0].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
@@ -141,69 +154,53 @@ with tab_mapas:
                     axes[0].grid(True, linestyle='--', alpha=0.2, color='#334155')
                     axes[0].legend(loc='upper right', fontsize=9)
                     
-                    # --- PANEL 2: ESCÁNER TÁCTICO DE PERÍMETRO VISUAL ---
-                    # Dibujamos anillos concéntricos de radar (30, 60, 90, 120 arcsec)
+                    # Panel 2: Táctico Visual
                     for r in [30, 60, 90, 120]:
                         circle = plt.Circle((0, 0), r, fill=False, color='#1e293b', linestyle=':', alpha=0.6)
                         axes[1].add_patch(circle)
-                        
-                    # Clasificamos vecinas peligrosas (Impostores brillantes que causan falsos positivos #NEB)
                     peligrosas = vecinas[vecinas['Tmag'] <= (tmag_target + 2.5)]
                     inofensivas = vecinas[vecinas['Tmag'] > (tmag_target + 2.5)]
                     
                     axes[1].scatter(inofensivas['offset_ra'], inofensivas['offset_dec'], 
                                     s=np.maximum(5, (18 - inofensivas['Tmag']) * 12), 
-                                    color='#38bdf8', alpha=0.5, label='Inofensivas (Tenues)')
+                                    color='#38bdf8', alpha=0.5, label='Inofensivas')
                     if not peligrosas.empty:
                         axes[1].scatter(peligrosas['offset_ra'], peligrosas['offset_dec'], 
                                         s=np.maximum(10, (18 - peligrosas['Tmag']) * 16), 
-                                        color='#f97316', alpha=0.9, edgecolors='#fdba74', label='⚠️ Peligro de Contaminación')
-                        # Añadimos etiquetas de texto a las vecinas peligrosas
+                                        color='#f97316', alpha=0.9, edgecolors='#fdba74', label='⚠️ Contaminación')
                         for _, star in peligrosas.iterrows():
                             axes[1].text(star['offset_ra']+4, star['offset_dec']+4, f"Tmag {star['Tmag']:.1f}", 
                                          color='#fdba74', fontsize=8, alpha=0.8)
-                            
-                    axes[1].scatter(0, 0, s=250, color='#22d3ee', marker='o', edgecolors='white', label='Nuestro Objetivo')
+                    axes[1].scatter(0, 0, s=250, color='#22d3ee', marker='o', edgecolors='white', label='Objetivo')
                     axes[1].set_xlim(-130, 130)
-                    axes[1].set_ylim(-130, 130)
-                    axes[1].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
                     axes[1].set_title("2. ESCÁNER TÁCTICO VISUAL", fontsize=12, fontweight='bold', color='#22d3ee')
                     axes[1].grid(True, linestyle=':', alpha=0.1, color='#475569')
                     axes[1].legend(loc='upper right', fontsize=9)
                     
-                    # --- PANEL 3: ESCÁNER CON ZOOM ---
-                    # Reducimos drásticamente los límites a 45 arcsec (Aproximadamente 2 píxeles de TESS)
+                    # Panel 3: Zoom
                     axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], 
                                     s=np.maximum(10, (18 - vecinas['Tmag']) * 25), 
                                     color='#64748b', alpha=0.8, edgecolors='#94a3b8')
-                    # Añadimos el identificador numérico a las estrellas extremadamente cercanas
                     for _, star in vecinas[(vecinas['offset_ra'].abs() < 40) & (vecinas['offset_dec'].abs() < 40)].iterrows():
-                        axes[2].text(star['offset_ra']+2, star['offset_dec']+2, f"TIC {star['ID']}", 
-                                     color='#94a3b8', fontsize=8)
-                        
-                    axes[2].scatter(0, 0, s=300, color='#e11d48', marker='X', edgecolors='white', label='Objetivo Principal')
+                        axes[2].text(star['offset_ra']+2, star['offset_dec']+2, f"TIC {star['ID']}", color='#94a3b8', fontsize=8)
+                    axes[2].scatter(0, 0, s=300, color='#e11d48', marker='X', edgecolors='white', label='Objetivo')
                     axes[2].set_xlim(-45, 45)
                     axes[2].set_ylim(-45, 45)
-                    axes[2].set_xlabel("Offset RA (arcsec)", color='#94a3b8')
                     axes[2].set_title("3. ESCÁNER DE ALTA RESOLUCIÓN (ZOOM)", fontsize=12, fontweight='bold', color='#fb7185')
                     axes[2].grid(True, linestyle='--', alpha=0.3, color='#334155')
-                    
-                    # Dibujamos una caja de líneas que simula el tamaño aproximado de un píxel central de TESS (21x21 arcsec)
-                    pixel_box = plt.Rectangle((-10.5, -10.5), 21, 21, fill=False, color='#e11d48', linestyle='--', alpha=0.5, label='Apertura Píxel TESS')
+                    pixel_box = plt.Rectangle((-10.5, -10.5), 21, 21, fill=False, color='#e11d48', linestyle='--', alpha=0.5, label='Píxel TESS')
                     axes[2].add_patch(pixel_box)
                     axes[2].legend(loc='upper right', fontsize=9)
                     
                     plt.suptitle(f"Auditoría Cartográfica Forense - Centro de Sistemas TIC {tic_input}", fontsize=14, y=0.98, color='#f8fafc', fontweight='bold')
                     plt.tight_layout()
-                    
-                    # Desplegamos la imagen triple en la aplicación web
                     st.pyplot(fig)
                     
-                    # Desplegamos también una pequeña alerta informativa en el búnker
+                    # Alerta informativa perimetral
                     if not peligrosas.empty:
-                        st.warning(f"⚠️ **ALERTA DE SEGURIDAD ESTELAR:** Se han detectado {len(peligrosas)} estrellas con brillo suficiente en el perímetro inmediato para causar una ilusión de tránsito (#NEB). El mapa de centroide de la pestaña 3 o el análisis fotométrico será crítico para resolver este sistema.")
+                        st.warning(f"⚠️ **ALERTA DE SEGURIDAD ESTELAR:** Se han detectado {len(peligrosas)} estrellas con brillo suficiente en el perímetro inmediato para causar una ilusión de tránsito (#NEB).")
                     else:
-                        st.success("🟢 **PERÍMETRO LIMPIO:** No hay estrellas brillantes vecinas en un radio de 120 segundos de arco. Si detectamos una caída de luz, las probabilidades de que sea un planeta real aumentan drásticamente.")
+                        st.success("🟢 **PERÍMETRO LIMPIO:** No hay estrellas brillantes vecinas en un radio de 120 segundos de arco.")
                         
             except Exception as e:
                 st.error(f"❌ Error al interrogar los catálogos estelares de la NASA: {e}")
