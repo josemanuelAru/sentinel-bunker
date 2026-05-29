@@ -24,7 +24,6 @@ try:
     import keras
     KERAS_DISPONIBLE = True
 except Exception as e:
-    # Si Keras lanza ValueError o ImportError por falta de backend, el búnker resiste
     KERAS_DISPONIBLE = False
     estado_ia_texto = f"Bypass activado: {type(e).__name__}"
 
@@ -165,7 +164,15 @@ def buscar_sectores_tesscut_lista(tic_id):
         search = lk.search_tesscut(f"TIC {tic_id}")
         if len(search) == 0:
             return []
-        return [f"Índice {idx} | {fila.mission[0]} (Año {fila.year[0]})" for idx, fila in enumerate(search)]
+        
+        # 🚨 CORRECCIÓN FORENSE: Indexación segura mediante rodajas limpias de fila de Lightkurve
+        opciones = []
+        for i in range(len(search)):
+            fila_unitaria = search[i]
+            m = fila_unitaria.mission[0]
+            y = fila_unitaria.year[0]
+            opciones.append(f"Índice {i} | {m} (Año {int(y)})")
+        return opciones
     except:
         return []
 
@@ -290,11 +297,11 @@ tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
 ])
 
 # ------------------------------------------------------------------------------
-# PESTAÑA 1: RADAR AUTÓNOMO (MOTOR TOTALMENTE INTEGRADO Y TOLERANTE A FALLOS)
+# PESTAÑA 1: RADAR AUTÓNOMO
 # ------------------------------------------------------------------------------
 with tab_radar:
     st.header("🛸 Escáner Autónomo del Perímetro Estelar")
-    st.write("Active el cerebro artificial de Sentinel para patrullar secuencialmente la base de datos de la NASA.")
+    st.write("Active el cerebro de la Fase 10 para patrullar secuencialmente la galaxia en busca de tránsitos planetarios.")
     
     if estado_ia_texto == "ONLINE" and cerebro_ia is not None:
         st.success("🧠 CEREBRO IA FASE 10 ACTIVADO: PURE NUMPY BACKEND OPERANDO AL 100%")
@@ -518,7 +525,7 @@ with tab_mapas:
                     axes[1].grid(True, linestyle=':', alpha=0.1, color='#475569')
                     axes[1].legend(loc='upper right')
                     
-                    axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(10, (18 - vecinas['Tmag']) * 25), color='#64748b', alpha=0.8)
+                    axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(10, (18 - vecinas['Tmag']) * 25), color='#64748b')
                     for _, star in vecinas[(vecinas['offset_ra'].abs() < 40) & (vecinas['offset_dec'].abs() < 40)].iterrows():
                         axes[2].text(star['offset_ra']+2, star['offset_dec']+2, f"TIC {star['ID']}", color='#94a3b8', fontsize=8)
                     axes[2].scatter(0, 0, s=300, color='#e11d48', marker='X', label='Objetivo')
@@ -586,7 +593,7 @@ with tab_mapas:
             except Exception as e: st.error(f"❌ Error al conectar: {e}")
 
 # ------------------------------------------------------------------------------
-# PESTAÑA 4: LABORATORIO FOTOMÉTRICO
+# PESTAÑA 4: LABORATORIO FOTOMÉTRICO (BLINDAJE DE LISTAS CONFIRMADO)
 # ------------------------------------------------------------------------------
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
@@ -599,9 +606,10 @@ with tab_analisis:
             tic_target1 = tic_id_an1.strip()
             try:
                 opciones_misiones = buscar_sectores_tesscut_lista(tic_target1)
-                if len(opciones_misiones) == 0: st.warning("❌ No se encontraron productos de datos.")
+                if len(opciones_misiones) == 0: 
+                    st.warning("❌ No se encontraron productos de datos válidos en TESScut para esta estrella.")
                 else:
-                    seleccion = st.selectbox("Seleccione el Sector Histórico:", options=opciones_misiones, key="sel_sec1")
+                    seleccion = st.selectbox("Seleccione el Sector Histórico que desea graficar:", options=opciones_misiones, key="sel_sec1")
                     indice_sector = int(seleccion.split(" | ")[0].split(" ")[1])
                     if st.button("📈 GENERAR DIAGNÓSTICO FOTOMÉTRICO", key="btn_run_an1"):
                         status_box1 = st.status("📡 Conectando...", expanded=True)
@@ -630,7 +638,7 @@ with tab_analisis:
                             resultado = generar_auditoria_sector_bytes(tic_target2, i)
                             if resultado["status"] == "skip": continue
                             st.image(resultado["img_bytes"], use_container_width=True)
-                            st.download_button(label=f"📥 DESCARGAR DIAGNÓSTICO {resultado['mision']} (PNG)", data=resultado["img_bytes"], file_name=f"Diagnostico_TIC_{tic_target2}_{resultado['mision']}.png", mime="image/png", key=f"btn_dl_masivo_{i}")
+                            st.download_button(label="📥 DESCARGAR DIAGNÓSTICO {resultado['mision']} (PNG)", data=resultado["img_bytes"], file_name=f"Diagnostico_TIC_{tic_target2}_{resultado['mision']}.png", mime="image/png", key=f"btn_dl_masivo_{i}")
                         except: continue
                     status_macro.update(label="🏁 AUDITORÍA COMPLETADA.", state="complete")
                 except Exception as e_master: st.error(f"Fallo: {e_master}")
