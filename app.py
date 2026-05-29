@@ -31,7 +31,7 @@ st.markdown("""
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
-# --- 🚨 NÚCLEO FOTOMÉTRICO CACHED (PROCESAMIENTO AISLADO DE IMAGEN EN BYTES) ---
+# --- FUNCIONES DE MEMORIA CACHÉ ---
 
 @st.cache_data(show_spinner=False)
 def descargar_matrices_ffi(tic_id, sector):
@@ -46,7 +46,6 @@ def descargar_matrices_ffi(tic_id, sector):
 
 @st.cache_data(show_spinner=False)
 def buscar_sectores_tesscut_lista(tic_id):
-    # Almacenamos solo los metadatos de texto de la búsqueda (100% seguro)
     search = lk.search_tesscut(f"TIC {tic_id}")
     if len(search) == 0:
         return []
@@ -54,7 +53,6 @@ def buscar_sectores_tesscut_lista(tic_id):
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_individual_bytes(tic_id, indice_sector):
-    # Todo el proceso matemático ocurre aquí de forma aislada y devuelve BYTES puros
     tic_target = f"TIC {tic_id}"
     search = lk.search_tesscut(tic_target)
     fila_elegida = search[indice_sector]
@@ -163,12 +161,13 @@ def generar_auditoria_sector_bytes(tic_id, indice_sector):
         "img_bytes": buf.getvalue()
     }
 
-# --- ARQUITECTURA DE PESTAÑAS ---
-tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
+# --- ARQUITECTURA DE LAS 5 PESTAÑAS ---
+tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
     "📡 RADAR AUTÓNOMO", 
     "🗂️ REGISTROS HISTÓRICOS", 
     "🗺️ MAPAS ESTELARES", 
-    "📈 ANÁLISIS Y DESCARGAS"
+    "📈 ANÁLISIS Y DESCARGAS",
+    "🪐 CARACTERIZACIÓN DEL CANDIDATO"
 ])
 
 # --- PESTAÑA 1: RADAR ---
@@ -391,7 +390,7 @@ with tab_mapas:
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 
-# --- PESTAÑA 4: LABORATORIO FOTOMÉTRICO (MODO BYTES INDESTRUCTIBLE) ---
+# --- PESTAÑA 4: LABORATORIO FOTOMÉTRICO ---
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
     
@@ -400,7 +399,6 @@ with tab_analisis:
         "🕵️ APARTADO 2: AUDITORÍA TRANS-TEMPORAL AUTOMATIZADA (TODO)"
     ])
     
-    # --- APARTADO 1: ANÁLISIS INDIVIDUAL ---
     with subtab_individual:
         st.subheader("🔭 Extracción de Curvas: Real vs Mitigada")
         tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
@@ -409,9 +407,7 @@ with tab_analisis:
             tic_target1 = tic_id_an1.strip()
             with st.container():
                 try:
-                    # Extraemos de forma rápida la lista de misiones (Caché de texto plano segura)
                     opciones_misiones = buscar_sectores_tesscut_lista(tic_target1)
-                    
                     if len(opciones_misiones) == 0:
                         st.warning("❌ No se encontraron productos de datos para esta estrella.")
                     else:
@@ -422,8 +418,6 @@ with tab_analisis:
                             status_box1 = st.status("📡 Conectando con los archivos fotométricos...", expanded=True)
                             try:
                                 status_box1.update(label="📥 Ejecutando computación aislada en la caché de la nube...", state="running")
-                                
-                                # 🚨 AQUÍ OCURRE EL MILAGRO: La función devuelve BYTES, cero errores de Lightkurve
                                 img_bytes, mision_nombre = generar_grafica_individual_bytes(tic_target1, indice_sector)
                                 
                                 status_box1.update(label="🎯 ¡Procesamiento completado!", state="complete")
@@ -431,7 +425,7 @@ with tab_analisis:
                                 
                                 st.download_button(
                                     label="📥 DESCARGAR GRÁFICA DE SECTOR INDIVIDUAL (PNG)",
-                                    data=img_buf1 if 'img_buf1' in locals() else img_bytes,
+                                    data=img_bytes,
                                     file_name=f"Historial_TIC_{tic_target1}_Sector_{mision_nombre.replace(' ', '_')}.png",
                                     mime="image/png"
                                 )
@@ -441,7 +435,6 @@ with tab_analisis:
                 except Exception as e_an1:
                     st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
                     
-    # --- APARTADO 2: AUDITORÍA MASIVA ---
     with subtab_completo:
         st.subheader("🛸 Procesamiento Automatizado Multiespectral")
         tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
@@ -453,21 +446,17 @@ with tab_analisis:
                 try:
                     opciones_misiones2 = buscar_sectores_tesscut_lista(tic_target2)
                     total_sectores = len(opciones_misiones2)
-                    status_macro.update(label=f"📦 Conexión establecida. Detectados {total_sectores} sectores listos para escaneo de bytes.")
+                    status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para escaneo de bytes.")
                     
                     for i in range(total_sectores):
                         st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: Procesando...")
-                        
                         try:
-                            # Lanzamos el motor masivo en caché de bytes
                             resultado = generar_auditoria_sector_bytes(tic_target2, i)
-                            
                             if resultado["status"] == "skip":
                                 st.warning(f"❌ Elemento {i+1}: {resultado['reason']}")
                                 continue
                                 
                             st.image(resultado["img_bytes"], use_container_width=True)
-                            
                             st.download_button(
                                 label=f"📥 DESCARGAR DIAGNÓSTICO {resultado['mision'].replace(' ', '_')} (PNG)",
                                 data=resultado["img_bytes"],
@@ -476,11 +465,140 @@ with tab_analisis:
                                 key=f"btn_dl_masivo_{i}"
                             )
                             st.write("---")
-                            
                         except Exception as e_sector:
                             st.error(f"❌ Fallo de redundancia en sector: {e_sector}")
                             continue
-                            
                     status_macro.update(label="🏁 AUDITORÍA COMPLETADA. REPORTES EN MEMORIA CACHÉ DISPONIBLES.", state="complete")
                 except Exception as e_master:
                     st.error(f"Fallo de conexión maestra: {e_master}")
+
+# --- PESTAÑA 5: VALIDACIÓN FORENSE DEL CANDIDATO (¡REPROGRAMACIÓN COMPLETA ESTILO FORO!) ---
+with tab_planeta:
+    st.header("🪐 Servidor Forense de Validación de Candidatos (Vetting)")
+    st.write("Introduzca los parámetros del eclipse para ejecutar las pruebas de exclusión de falsos positivos.")
+    
+    tic_id_planeta = st.text_input("ID de la Estrella Anfitriona (TIC):", value="", placeholder="Ej: 289512179", key="txt_id_planeta")
+    tic_planeta_input = tic_id_planeta.strip()
+    
+    if not tic_planeta_input:
+        st.info("🌌 LABORATORIO EN ESPERA: INTRODUZCA EL ID DE LA ESTRELLA ANFITRIONA...")
+    else:
+        with st.spinner("Interrogando catálogos de geometría estelar..."):
+            try:
+                target_data = Catalogs.query_criteria(catalog="TIC", ID=int(tic_planeta_input))
+                if len(target_data) == 0:
+                    st.error(f"❌ La estrella TIC {tic_planeta_input} no está registrada en el catálogo.")
+                else:
+                    r_estrella_nasa = target_data['rad'][0] if 'rad' in target_data.colnames and not np.isnan(target_data['rad'][0]) else None
+                    
+                    col_est1, col_est2 = st.columns([2, 3])
+                    with col_est1:
+                        st.markdown("### 🎚️ Entradas de Laboratorio")
+                        unidad_profundidad = st.radio("Unidad de la Caída de Luz:", ["Porcentaje (%)", "Partes por Millón (ppm)"])
+                        
+                        if unidad_profundidad == "Porcentaje (%)":
+                            caida_luz = st.number_input("Profundidad de la Caída (%):", min_value=0.001, max_value=20.0, value=1.0, step=0.01, format="%.3f")
+                            fraction_depth = caida_luz / 100.0
+                        else:
+                            caida_luz = st.number_input("Profundidad de la Caída (ppm):", min_value=1.0, max_value=200000.0, value=10000.0, step=10.0)
+                            fraction_depth = caida_luz / 1000000.0
+                            
+                        r_estrella = st.number_input("Radio de la Estrella Anfitriona (R☉):", min_value=0.05, max_value=50.0, value=float(r_estrella_nasa) if r_estrella_nasa else 1.0, step=0.01)
+                        
+                        # 🚨 NUEVOS CONTROLES FORENSES EXIGIDOS POR EL FORO
+                        st.write("---")
+                        st.markdown("🔬 **Filtros de Alerta Temprana**")
+                        odd_even_sigma = st.number_input("Diferencia de profundidad eclipses Impares vs Pares (Sigma σ):", min_value=0.0, max_value=100.0, value=0.0, step=0.1)
+                        centroid_status = st.radio("Auditoría del Centroide (Pestaña 3):", ["Centrado en el Objetivo (On-Target)", "Desviado / Contaminación de Fondo (Background Blend)"])
+                    
+                    with col_est2:
+                        st.markdown("### 🖥️ Reporte Automático de Validación TESS")
+                        
+                        # Cálculo del radio geométrico
+                        radio_planeta_sol = r_estrella * np.sqrt(fraction_depth)
+                        radio_planeta_tierra = radio_planeta_sol * 109.2
+                        radio_planeta_jupiter = radio_planeta_sol / 0.10049
+                        
+                        # --- MOTOR DE DIAGNÓSTICO EN CASCADA (LÓGICA DEL FORO) ---
+                        flags = []
+                        is_binary = False
+                        is_blend = False
+                        
+                        # Prueba 1: El límite planetario planet_cap (~2.2 R_Jup)
+                        if radio_planeta_jupiter > 2.2:
+                            flags.append("companion_too_large_for_planet")
+                            is_binary = True
+                            
+                        # Prueba 2: Desajuste Impar vs Par (Eclipsing Binary indicator si supera los 3 sigma)
+                        if odd_even_sigma >= 3.0:
+                            flags.append("odd_even_mismatch")
+                            is_binary = True
+                            
+                        # Prueba 3: Centroide fuera de eje
+                        if centroid_status == "Desviado / Contaminación de Fondo (Background Blend)":
+                            flags.append("background_blend")
+                            is_blend = True
+                        
+                        # Clasificación final y porcentaje de confianza dinámico
+                        if is_blend:
+                            categoria = "Falso Positivo por Fondo (Background Blend / NEB)"
+                            confianza = 95
+                            color_box = "#ef4444" # Rojo
+                            subtitulo = "La caída de luz proviene de una estrella de fondo, no de este objetivo."
+                        elif is_binary:
+                            categoria = "Binaria de Eclipse (Eclipsing Binary Candidate)"
+                            confianza = 95 if (len(flags) >= 2) else 85
+                            color_box = "#f97316" # Naranja
+                            subtitulo = "Señal altamente sospechosa de estrella enana compañera binaria."
+                        else:
+                            categoria = "Candidato a Exoplaneta (Planet Candidate)"
+                            confianza = 90
+                            color_box = "#10b981" # Verde
+                            subtitulo = "El objeto supera todos los filtros defensivos automáticos."
+                            
+                        # Despliegue del dossier visual idéntico al foro científico
+                        st.markdown(f"""
+                            <div style="background-color: #0f172a; padding: 20px; border-radius: 8px; border-left: 6px solid {color_box}; margin-bottom: 20px;">
+                                <p style="color: #94a3b8; font-size: 11px; margin: 0; text-transform: uppercase; font-family: monospace;">Category</p>
+                                <p style="color: #f8fafc; font-size: 20px; font-weight: bold; margin: 3px 0 0 0; font-family: monospace;">{categoria}</p>
+                                <p style="color: #22d3ee; font-size: 14px; margin: 5px 0 0 0; font-family: monospace;">Confidence: {confianza}%</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        # Renderizado del reporte de viñetas dinámico
+                        st.markdown(f"**Análisis de Variables Astrofísicas:**")
+                        
+                        # Línea de Radio
+                        if radio_planeta_jupiter > 2.2:
+                            st.markdown(f"• ❌ **Radio del compañero implicado:** {radio_planeta_jupiter:.1f} R_Jup — *excede el límite planetario (~2.2 R_Jup), tamaño de estrella enana M-dwarf.*")
+                        else:
+                            st.markdown(f"• 🟢 **Radio del compañero implicado:** {radio_planeta_jupiter:.2f} R_Jup — *dentro de los límites físicos planetarios.*")
+                            
+                        # Línea de Centroide
+                        if is_blend:
+                            st.markdown("• ❌ **Centroide:** *Desviado (Off-target). Alerta de contaminación por estrella vecina de fondo.*")
+                        else:
+                            st.markdown("• 🟢 **Centroide:** *Centrado en el objetivo (On-target) — no es una mezcla de fondo.*")
+                            
+                        # Línea de Eclipses pares/impares
+                        if odd_even_sigma >= 3.0:
+                            st.markdown(f"• ❌ **Eclipses Impares vs Pares:** *Difieren a {odd_even_sigma:.1f}σ — indicador crítico de binaria de eclipse.*")
+                        else:
+                            st.markdown(f"• 🟢 **Eclipses Impares vs Pares:** *Diferencia despreciable ({odd_even_sigma:.1f}σ) — compatible con tránsito planetario uniforme.*")
+                            
+                        # Renderizado de la lista de Flags final
+                        st.write("---")
+                        if flags:
+                            st.markdown("**Flags Activas del Sistema:**")
+                            badge_html = "".join([f"<span style='background-color:#1e293b; color:#f43f5e; border:1px solid #f43f5e; padding:4px 8px; border-radius:4px; font-size:12px; font-family:monospace; margin-right:8px;'>{f}</span>" for f in flags])
+                            st.markdown(badge_html, unsafe_allow_html=True)
+                        else:
+                            st.markdown("**Flags:** 🟢 `None` (Ningún peligro instrumental detectado)")
+                            
+                        st.write("---")
+                        p_col1, p_col2 = st.columns(2)
+                        p_col1.metric("Dimensiones vs Júpiter", f"{radio_planeta_jupiter:.2f} R_Jup")
+                        p_col2.metric("Dimensiones vs Tierra", f"{radio_planeta_tierra:.1f} R_Earth")
+                        
+            except Exception as e_planeta:
+                st.error(f"Error de cálculo astronómico: {e_planeta}")
