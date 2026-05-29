@@ -6,6 +6,7 @@ import pandas as pd
 from astroquery.mast import Catalogs
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+import io
 
 # --- CONFIGURACIÓN DE LA PANTALLA (Modo TV Ancho) ---
 st.set_page_config(
@@ -68,13 +69,7 @@ with tab_registros:
     tic_reg_input = tic_id_reg.strip()
     
     if not tic_reg_input:
-        st.markdown("""
-            <div style="background-color: #0f172a; padding: 30px; border-radius: 10px; border: 1px dashed #334155; text-align: center;">
-                <p style="color: #22d3ee; font-size: 18px; font-family: 'Courier New', monospace; margin: 0;">
-                    🌌 PESTAÑA EN ESPERA: INTRODUZCA ID PARA BUSCAR REGISTROS...
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+        st.info("🌌 PESTAÑA EN ESPERA: INTRODUZCA ID PARA BUSCAR REGISTROS...")
     else:
         with st.spinner(f"Interrogando a los servidores MAST (TESScut) para TIC {tic_reg_input}..."):
             try:
@@ -101,7 +96,7 @@ with tab_registros:
             except Exception as e:
                 st.error(f"❌ Error de conexión: {e}")
 
-# --- PESTAÑA 3: MAPAS ESTELARES CON REPORTE DE PELIGRO INCORPORADO ---
+# --- PESTAÑA 3: MAPAS ESTELARES ---
 with tab_mapas:
     st.header("🎯 Localización y Análisis de Vecindario Estelar (#NEB)")
     st.write("Introduzca el ID de la estrella para desplegar la auditoría perimetral y el análisis de centroide dinámico.")
@@ -110,18 +105,11 @@ with tab_mapas:
     tic_mapas_input = tic_id_mapas.strip()
     
     if not tic_mapas_input:
-        st.markdown("""
-            <div style="background-color: #0f172a; padding: 30px; border-radius: 10px; border: 1px dashed #334155; text-align: center;">
-                <p style="color: #22d3ee; font-size: 18px; font-family: 'Courier New', monospace; margin: 0;">
-                    🌌 PESTAÑA EN ESPERA: INTRODUZCA ID PARA GENERAR MAPAS Y DOSSIER FÍSICO...
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+        st.info("🌌 PESTAÑA EN ESPERA: INTRODUZCA ID PARA GENERAR MAPAS Y DOSSIER FÍSICO...")
     else:
         with st.spinner(f"Cargando sistemas cartográficos para TIC {tic_mapas_input}..."):
             try:
                 target_data = Catalogs.query_criteria(catalog="TIC", ID=int(tic_mapas_input))
-                
                 if len(target_data) == 0:
                     st.error(f"❌ La estrella TIC {tic_mapas_input} no existe en el catálogo oficial.")
                 else:
@@ -156,7 +144,6 @@ with tab_mapas:
                     
                     vecinas = df_stars[df_stars['ID'].astype(str) != tic_mapas_input]
                     
-                    # Planos Cartográficos Visuales
                     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                     plt.style.use('dark_background')
                     
@@ -192,11 +179,9 @@ with tab_mapas:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 🚨 🦾 NUEVO COMPONENTE: TU LISTA TÁCTICA DE CONTROL DE CONTAMINACIÓN REINTEGRADA
                     st.write("---")
                     st.subheader(f"👥 Reporte Forense de Estrellas en el Perímetro ({len(vecinas)} vecinas)")
                     
-                    # Procesamos la distancia exacta en minutos de arco desde el centro para cada fila
                     if 'dstArcSec' in df_stars.columns:
                         df_stars['distance_arcmin'] = df_stars['dstArcSec'] / 60.0
                     else:
@@ -206,13 +191,12 @@ with tab_mapas:
                     for _, estrella in df_stars.iterrows():
                         id_actual = str(estrella['ID'])
                         if id_actual == tic_mapas_input:
-                            continue  # Saltamos nuestro propio objetivo
+                            continue
                             
                         distancia = estrella['distance_arcmin']
                         mag_actual = estrella['Tmag']
                         diferencia_mag = mag_actual - tmag_target
                         
-                        # Tu algoritmo exacto de clasificación forense de peligro
                         if distancia < 1.5 and diferencia_mag < 4.0:
                             peligro = "🚨 ALTO (Muy cerca y brillante)"
                         elif distancia < 2.0 and diferencia_mag < 2.0:
@@ -229,16 +213,12 @@ with tab_mapas:
                     
                     if reporte_lineas:
                         df_reporte_final = pd.DataFrame(reporte_lineas)
-                        # Lo ordenamos por proximidad para que veas primero las vecinas más amenazantes
                         df_reporte_final = df_reporte_final.sort_values(by="Distancia (arcmin)").reset_index(drop=True)
                         st.dataframe(df_reporte_final, use_container_width=True)
-                    else:
-                        st.info("No se han detectado astros en el radio perimetral.")
                     
                     # --- PANEL INTERACTIVO DE CENTROIDE (FFI) ---
                     st.write("---")
                     st.markdown("### 📡 Interacción Forense: Análisis de Centroide Dinámico (TESScut FFI)")
-                    st.write("Configure los parámetros específicos del evento que desea auditar mediante la resta de imágenes.")
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
@@ -256,7 +236,7 @@ with tab_mapas:
                             
                             if tiempo is None:
                                 status_box.update(label="❌ Descarga fallida. Sector no disponible.", state="error")
-                                st.error(f"❌ No se encontraron imágenes panorámicas de TESScut para el Sector {sector_input} en esta estrella.")
+                                st.error(f"❌ No se encontraron imágenes panorámicas para el Sector {sector_input}.")
                             else:
                                 status_box.update(label="✂️ Recorte de píxeles recibido. Sincronizando fotogramas...", state="running")
                                 en_transito = (tiempo >= (t_centro_input - t_duracion_input/2)) & (tiempo <= (t_centro_input + t_duracion_input/2))
@@ -265,42 +245,210 @@ with tab_mapas:
                                 
                                 foto_fuera = np.nanmean(flux[fuera_transito & valid_frames, :, :], axis=0)
                                 foto_dentro = np.nanmean(flux[en_transito & valid_frames, :, :], axis=0)
-                                
-                                status_box.update(label="🧮 Ejecutando ecuación de diferencia (Resta de matrices)...", state="running")
                                 imagen_diferencia = foto_fuera - foto_dentro
                                 
-                                status_box.update(label="🎨 Renderizando mapa de calor de impacto...", state="running")
                                 fig2, axes2 = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                                 plt.style.use('dark_background')
                                 
                                 im1 = axes2[0].imshow(foto_fuera, origin='lower', cmap='viridis')
-                                axes2[0].set_title("1. Brillo Normal (Fuera)", fontsize=11)
-                                fig2.colorbar(im1, ax=axes2[0], label='Flujo')
-                                
+                                fig2.colorbar(im1, ax=axes2[0])
                                 im2 = axes2[1].imshow(foto_dentro, origin='lower', cmap='viridis')
-                                axes2[1].set_title("2. Durante el Evento", fontsize=11)
-                                fig2.colorbar(im2, ax=axes2[1], label='Flujo')
-                                
+                                fig2.colorbar(im2, ax=axes2[1])
                                 im3 = axes2[2].imshow(imagen_diferencia, origin='lower', cmap='inferno')
-                                axes2[2].set_title("3. MAPA DE IMPACTO DE CAÍDA (Resta)", fontsize=11, color='cyan', fontweight='bold')
-                                fig2.colorbar(im3, ax=axes2[2], label='Luz Modificada')
+                                fig2.colorbar(im3, ax=axes2[2])
                                                 
                                 centro_y, centro_x = foto_fuera.shape[0] // 2, foto_fuera.shape[1] // 2
-                                axes2[2].plot(centro_x, centro_y, 'r*', markersize=14, label=f'TIC {tic_mapas_input}')
-                                axes2[2].legend(loc='upper left')
-                                
-                                plt.suptitle(f"Análisis Forense de Centroide FFI - TIC {tic_mapas_input} (Sector {sector_input})", fontsize=13, y=0.98, color='#f8fafc', fontweight='bold')
-                                plt.tight_layout()
+                                axes2[2].plot(centro_x, centro_y, 'r*', markersize=14)
                                 
                                 status_box.update(label="🎯 ¡Auditoría de centroide completada con éxito!", state="complete")
                                 st.pyplot(fig2)
                         except Exception as ffi_err:
-                            status_box.update(label="❌ Cortocorticuito en el procesamiento matemático.", state="error")
-                            st.error(f"❌ Error al procesar la matriz de centroide: {ffi_err}")
+                            status_box.update(label="❌ Cortocircuito en el procesamiento.", state="error")
+                            st.error(f"❌ Error: {ffi_err}")
             except Exception as e:
-                st.error(f"❌ Error al conectar con los catálogos: {e}")
+                st.error(f"❌ Error: {e}")
 
-# --- PESTAÑA 4: ANÁLISIS ---
+# --- PESTAÑA 4: ANÁLISIS FOTOMÉTRICO Y DESCARGAS (¡NUEVO MÓDULO INTEGRADO!) ---
 with tab_analisis:
-    st.header("📊 Curva de Luz Avanzada con Filtro Orbital")
-    st.info("Módulo fotométrico en desarrollo.")
+    st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
+    
+    # Creamos sub-apartados independientes mediante pestañas de interfaz interna
+    subtab_individual, subtab_completo = st.tabs([
+        "🔬 APARTADO 1: ANÁLISIS DE SECTOR INDIVIDUAL", 
+        "🕵️ APARTADO 2: AUDITORÍA TRANS-TEMPORAL AUTOMATIZADA (TODO)"
+    ])
+    
+    # ==============================================================================
+    # APARTADO 1: ANÁLISIS INDIVIDUAL CON SELECTOR DINÁMICO
+    # ==============================================================================
+    with subtab_individual:
+        st.subheader("🔭 Extracción de Curvas: Real vs Mitigada")
+        tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
+        
+        if tic_id_an1.strip():
+            tic_target1 = f"TIC {tic_id_an1.strip()}"
+            with st.spinner("Buscando sectores disponibles en los servidores de la NASA..."):
+                try:
+                    search1 = lk.search_tesscut(tic_target1)
+                    if len(search1) == 0:
+                        st.warning("❌ No se encontraron productos de datos para esta estrella.")
+                    else:
+                        # Creamos un menú desplegable dinámico para que elijas el sector de esa estrella
+                        opciones_misiones = [f"Índice {idx} | {fila.mission[0]} (Año {fila.year[0]})" for idx, fila in enumerate(search1)]
+                        seleccion = st.selectbox("Seleccione el Sector Histórico que desea graficar:", options=opciones_misiones, key="sel_sec1")
+                        
+                        indice_sector = int(seleccion.split(" | ")[0].split(" ")[1])
+                        fila_elegida = search1[indice_sector]
+                        
+                        if st.button("📈 GENERAR DIAGNÓSTICO FOTOMÉTRICO", key="btn_run_an1"):
+                            with st.spinner("Procesando fotometría de apertura y aplicando rodillo flatten..."):
+                                tpf = fila_elegida.download(cutout_size=5)
+                                mascara_estrella = tpf.create_threshold_mask(threshold=3)
+                                
+                                lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
+                                lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
+                                
+                                tiempo_inicio = lc_limpia.time.value[0]
+                                lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
+                                lc_plana = lc_recortada.flatten(window_length=101)
+                                
+                                # Renderizado exacto estilo búnker oscuro
+                                fig_an1, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9))
+                                fig_an1.patch.set_facecolor('#0e1117')
+                                
+                                ax1.set_facecolor('#0e1117')
+                                ax1.plot(lc_recortada.time.value, lc_recortada.flux.value, color='gold', linewidth=1.2)
+                                ax1.set_title(f"🔭 HISTORIAL REAL: {tic_target1} ({fila_elegida.mission[0]} - Año {fila_elegida.year[0]})", color='white', fontsize=13, fontweight='bold')
+                                ax1.set_ylabel("Brillo Físico Real", color='white')
+                                ax1.tick_params(colors='white')
+                                ax1.grid(color='#333333', linestyle='--', alpha=0.5)
+                                
+                                ax2.set_facecolor('#0e1117')
+                                ax2.plot(lc_plana.time.value, lc_plana.flux.value, color='cyan', linewidth=0.8)
+                                ax2.set_title(f"🛡️ CURVA APLANADA (Entrada BLS con cadencia de {fila_elegida.exptime[0]}s)", color='cyan', fontsize=11)
+                                ax2.set_ylabel("Brillo Mitigado", color='white')
+                                ax2.tick_params(colors='white')
+                                ax2.grid(color='#333333', linestyle='--', alpha=0.5)
+                                plt.tight_layout()
+                                
+                                st.pyplot(fig_an1)
+                                
+                                # Exportación directa a flujo de bytes para descargas locales en Smart TV o PC
+                                img_buf1 = io.BytesIO()
+                                fig_an1.savefig(img_buf1, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=150)
+                                img_buf1.seek(0)
+                                
+                                st.download_button(
+                                    label="📥 DESCARGAR GRÁFICA DE SECTOR INDIVIDUAL (PNG)",
+                                    data=img_buf1,
+                                    file_name=f"Historial_{tic_target1.replace(' ', '_')}_Sector_{fila_elegida.mission[0].replace(' ', '_')}.png",
+                                    mime="image/png"
+                                )
+                                plt.close(fig_an1)
+                except Exception as e_an1:
+                    st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
+                    
+    # ==============================================================================
+    # APARTADO 2: AUDITORÍA TRANS-TEMPORAL COMPLETA DE TODOS LOS SECTORES
+    # ==============================================================================
+    with subtab_completo:
+        st.subheader("🛸 Procesamiento Automatizado Multiespectral")
+        tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
+        
+        if tic_id_an2.strip():
+            tic_target2 = f"TIC {tic_id_an2.strip()}"
+            if st.button("🚀 INICIAR AUDITORÍA DE TODOS LOS SECTORES", key="btn_run_an2"):
+                status_macro = st.status("🕵️ Probando conexiones con el archivo central...", expanded=True)
+                try:
+                    search2 = lk.search_tesscut(tic_target2)
+                    total_sectores = len(search2)
+                    status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para análisis masivo.")
+                    
+                    # Bucle táctico para procesar secuencialmente cada sector
+                    for i in range(total_sectores):
+                        fila_sector = search2[i]
+                        mision_nombre = fila_sector.mission[0]
+                        año_observacion = fila_sector.year[0]
+                        
+                        st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: {mision_nombre} (Año {año_observacion})")
+                        
+                        try:
+                            tpf = fila_sector.download(cutout_size=5)
+                            mascara_estrella = tpf.create_threshold_mask(threshold=3)
+                            
+                            if mascara_estrella.sum() == 0:
+                                st.warning(f"❌ {mision_nombre}: Sin píxeles de luz válidos. Saltando sector.")
+                                continue
+                                
+                            lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
+                            lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
+                            
+                            tiempo_inicio = lc_limpia.time.value[0]
+                            lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
+                            
+                            if len(lc_recortada) < 150:
+                                st.warning(f"❌ {mision_nombre}: Puntos de datos insuficientes tras recorte térmico. Saltando sector.")
+                                continue
+                                
+                            lc_plana = lc_recortada.flatten(window_length=101)
+                            
+                            # Radar BLS
+                            periodograma = lc_plana.to_periodogram(method='bls', period=np.arange(0.5, 15, 0.01))
+                            mejor_periodo = periodograma.period_at_max_power.value
+                            mejor_t0 = periodograma.transit_time_at_max_power.value
+                            indice_maxima_potencia = np.argmax(periodograma.power.value)
+                            fuerza_snr = float(periodograma.snr[indice_maxima_potencia])
+                            
+                            lc_plegada = lc_plana.fold(period=mejor_periodo, epoch_time=mejor_t0)
+                            lc_binned = lc_plegada.bin(time_bin_size=0.01)
+                            
+                            # Construcción exacta del reporte triple de diagnóstico
+                            fig_an2, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
+                            fig_an2.patch.set_facecolor('#0e1117')
+                            
+                            ax1.set_facecolor('#0e1117')
+                            tpf.plot(ax=ax1, aperture_mask=mascara_estrella, show_colorbar=False)
+                            ax1.set_title(f"🎯 MIRA DE PÍXELES: {tic_target2} ({mision_nombre})", color='white', fontsize=11)
+                            ax1.tick_params(colors='white')
+                            
+                            ax2.set_facecolor('#0e1117')
+                            ax2.plot(periodograma.period.value, periodograma.power.value, color='gold')
+                            ax2.set_title(f"📊 RADAR BLS - SNR: {fuerza_snr:.1f} | Ritmo Órbita: {mejor_periodo:.4f} días", color='white', fontsize=11)
+                            ax2.tick_params(colors='white')
+                            ax2.grid(color='#333333', linestyle='--', alpha=0.4)
+                            
+                            ax3.set_facecolor('#0e1117')
+                            ax3.scatter(lc_plegada.time.value, lc_plegada.flux.value, color='gray', alpha=0.3, s=2)
+                            if len(lc_binned) > 0:
+                                ax3.plot(lc_binned.time.value, lc_binned.flux.value, color='magenta', linewidth=2.5)
+                            ax3.set_xlim(-0.2, 0.2)
+                            ax3.set_title(f"🛸 HUELLA PLEGADA CRUCIAL (Año {año_observacion})", color='cyan', fontsize=13, fontweight='bold')
+                            ax3.axvline(0, color='red', linestyle=':')
+                            ax3.tick_params(colors='white')
+                            ax3.grid(color='#333333', linestyle='--', alpha=0.5)
+                            plt.tight_layout()
+                            
+                            st.pyplot(fig_an2)
+                            
+                            # Botón de descarga individual acoplado a este sector específico de la iteración
+                            img_buf2 = io.BytesIO()
+                            fig_an2.savefig(img_buf2, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=120)
+                            img_buf2.seek(0)
+                            
+                            st.download_button(
+                                label=f"📥 DESCARGAR DIAGNÓSTICO {mision_nombre.replace(' ', '_')} (PNG)",
+                                data=img_buf2,
+                                file_name=f"Diagnostico_{tic_target2.replace(' ', '_')}_{mision_nombre.replace(' ', '_')}.png",
+                                mime="image/png",
+                                key=f"btn_dl_masivo_{i}"
+                            )
+                            plt.close(fig_an2)
+                            st.write("---")
+                            
+                        except Exception as e_sector:
+                            st.error(f"❌ Fallo crítico procesando sector {mision_nombre}: {e_sector}")
+                            continue
+                            
+                    status_macro.update(label="🏁 AUDITORÍA COMPLETADA. REPORTES DISPONIBLES EN PANTALLA.", state="complete")
+                except Exception as e_master:
+                    st.error(f"Fallo de conexión maestra: {e_master}")
