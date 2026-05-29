@@ -31,7 +31,8 @@ st.markdown("""
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
-# --- 🚨 FUNCIONES CACHED ULTRA-RÁPIDAS (PROTECCIÓN ANTI-CAÍDAS) ---
+# --- 🚨 NÚCLEO FOTOMÉTRICO CACHED (PROCESAMIENTO AISLADO DE IMAGEN EN BYTES) ---
+
 @st.cache_data(show_spinner=False)
 def descargar_matrices_ffi(tic_id, sector):
     try:
@@ -44,17 +45,123 @@ def descargar_matrices_ffi(tic_id, sector):
         return None, None
 
 @st.cache_data(show_spinner=False)
-def buscar_sectores_tesscut(tic_target):
-    # Almacena la lista de sectores para no saturar al servidor MAST con búsquedas repetidas
-    return lk.search_tesscut(tic_target)
+def buscar_sectores_tesscut_lista(tic_id):
+    # Almacenamos solo los metadatos de texto de la búsqueda (100% seguro)
+    search = lk.search_tesscut(f"TIC {tic_id}")
+    if len(search) == 0:
+        return []
+    return [f"Índice {idx} | {fila.mission[0]} (Año {fila.year[0]})" for idx, fila in enumerate(search)]
 
 @st.cache_data(show_spinner=False)
-def descargar_tpf_individual(tic_target, indice_sector, size=5):
-    # Descarga de forma segura y aisla el TargetPixelFile en la memoria de la app
+def generar_grafica_individual_bytes(tic_id, indice_sector):
+    # Todo el proceso matemático ocurre aquí de forma aislada y devuelve BYTES puros
+    tic_target = f"TIC {tic_id}"
     search = lk.search_tesscut(tic_target)
-    fila = search[indice_sector]
-    tpf = fila.download(cutout_size=size)
-    return tpf
+    fila_elegida = search[indice_sector]
+    
+    tpf = fila_elegida.download(cutout_size=5)
+    mascara_estrella = tpf.create_threshold_mask(threshold=3)
+    
+    lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
+    lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
+    
+    tiempo_inicio = lc_limpia.time.value[0]
+    lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
+    lc_plana = lc_recortada.flatten(window_length=101)
+    
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9))
+    fig.patch.set_facecolor('#0e1117')
+    
+    ax1.set_facecolor('#0e1117')
+    ax1.plot(lc_recortada.time.value, lc_recortada.flux.value, color='gold', linewidth=1.2)
+    ax1.set_title(f"🔭 HISTORIAL REAL: {tic_target} ({fila_elegida.mission[0]} - Año {fila_elegida.year[0]})", color='white', fontsize=13, fontweight='bold')
+    ax1.set_ylabel("Brillo Físico Real", color='white')
+    ax1.tick_params(colors='white')
+    ax1.grid(color='#333333', linestyle='--', alpha=0.5)
+    
+    ax2.set_facecolor('#0e1117')
+    ax2.plot(lc_plana.time.value, lc_plana.flux.value, color='cyan', linewidth=0.8)
+    ax2.set_title(f"🛡️ CURVA APLANADA (Entrada BLS con cadencia de {fila_elegida.exptime[0]}s)", color='cyan', fontsize=11)
+    ax2.set_ylabel("Brillo Mitigado", color='white')
+    ax2.tick_params(colors='white')
+    ax2.grid(color='#333333', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=150)
+    plt.close(fig)
+    return buf.getvalue(), str(fila_elegida.mission[0])
+
+@st.cache_data(show_spinner=False)
+def generar_auditoria_sector_bytes(tic_id, indice_sector):
+    tic_target = f"TIC {tic_id}"
+    search = lk.search_tesscut(tic_target)
+    fila_sector = search[indice_sector]
+    mision_nombre = str(fila_sector.mission[0])
+    año_observacion = int(fila_sector.year[0])
+    
+    tpf = fila_sector.download(cutout_size=5)
+    mascara_estrella = tpf.create_threshold_mask(threshold=3)
+    
+    if mascara_estrella.sum() == 0:
+        return {"status": "skip", "reason": "Sin píxeles de luz válidos."}
+        
+    lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
+    lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
+    
+    tiempo_inicio = lc_limpia.time.value[0]
+    lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
+    
+    if len(lc_recortada) < 150:
+        return {"status": "skip", "reason": "Puntos de datos insuficientes tras recorte térmico."}
+        
+    lc_plana = lc_recortada.flatten(window_length=101)
+    
+    periodograma = lc_plana.to_periodogram(method='bls', period=np.arange(0.5, 15, 0.01))
+    mejor_periodo = float(periodograma.period_at_max_power.value)
+    mejor_t0 = float(periodograma.transit_time_at_max_power.value)
+    indice_maxima_potencia = np.argmax(periodograma.power.value)
+    fuerza_snr = float(periodograma.snr[indice_maxima_potencia])
+    
+    lc_plegada = lc_plana.fold(period=mejor_periodo, epoch_time=mejor_t0)
+    lc_binned = lc_plegada.bin(time_bin_size=0.01)
+    
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
+    fig_an2 = fig
+    fig_an2.patch.set_facecolor('#0e1117')
+    
+    ax1.set_facecolor('#0e1117')
+    tpf.plot(ax=ax1, aperture_mask=mascara_estrella, show_colorbar=False)
+    ax1.set_title(f"🎯 MIRA DE PÍXELES: {tic_target} ({mision_nombre})", color='white', fontsize=11)
+    ax1.tick_params(colors='white')
+    
+    ax2.set_facecolor('#0e1117')
+    ax2.plot(periodograma.period.value, periodograma.power.value, color='gold')
+    ax2.set_title(f"📊 RADAR BLS - SNR: {fuerza_snr:.1f} | Ritmo Órbita: {mejor_periodo:.4f} días", color='white', fontsize=11)
+    ax2.tick_params(colors='white')
+    ax2.grid(color='#333333', linestyle='--', alpha=0.4)
+    
+    ax3.set_facecolor('#0e1117')
+    ax3.scatter(lc_plegada.time.value, lc_plegada.flux.value, color='gray', alpha=0.3, s=2)
+    if len(lc_binned) > 0:
+        ax3.plot(lc_binned.time.value, lc_binned.flux.value, color='magenta', linewidth=2.5)
+    ax3.set_xlim(-0.2, 0.2)
+    ax3.set_title(f"🛸 HUELLA PLEGADA CRUCIAL (Año {año_observacion})", color='cyan', fontsize=13, fontweight='bold')
+    ax3.axvline(0, color='red', linestyle=':')
+    ax3.tick_params(colors='white')
+    ax3.grid(color='#333333', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=120)
+    plt.close(fig)
+    
+    return {
+        "status": "success",
+        "mision": mision_nombre,
+        "año": año_observacion,
+        "img_bytes": buf.getvalue()
+    }
 
 # --- ARQUITECTURA DE PESTAÑAS ---
 tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
@@ -89,7 +196,7 @@ with tab_registros:
     else:
         with st.spinner(f"Interrogando a los servidores MAST (TESScut) para TIC {tic_reg_input}..."):
             try:
-                search_result = buscar_sectores_tesscut(f"TIC {tic_reg_input}")
+                search_result = lk.search_tesscut(f"TIC {tic_reg_input}")
                 if len(search_result) == 0:
                     st.warning(f"⚠️ No se han encontrado recortes de TESScut para la estrella TIC {tic_reg_input}.")
                 else:
@@ -284,7 +391,7 @@ with tab_mapas:
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 
-# --- PESTAÑA 4: ANÁLISIS FOTOMÉTRICO (AHORA CON BLINDAJE DE CACHÉ ANTI-CORTES) ---
+# --- PESTAÑA 4: LABORATORIO FOTOMÉTRICO (MODO BYTES INDESTRUCTIBLE) ---
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
     
@@ -299,73 +406,37 @@ with tab_analisis:
         tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
         
         if tic_id_an1.strip():
-            tic_target1 = f"TIC {tic_id_an1.strip()}"
-            with st.sidebar if False else st.container():
+            tic_target1 = tic_id_an1.strip()
+            with st.container():
                 try:
-                    # 🚨 MEJORA: Búsqueda protegida por caché para evitar Error 104
-                    search1 = buscar_sectores_tesscut(tic_target1)
-                    if len(search1) == 0:
+                    # Extraemos de forma rápida la lista de misiones (Caché de texto plano segura)
+                    opciones_misiones = buscar_sectores_tesscut_lista(tic_target1)
+                    
+                    if len(opciones_misiones) == 0:
                         st.warning("❌ No se encontraron productos de datos para esta estrella.")
                     else:
-                        opciones_misiones = [f"Índice {idx} | {fila.mission[0]} (Año {fila.year[0]})" for idx, fila in enumerate(search1)]
                         seleccion = st.selectbox("Seleccione el Sector Histórico que desea graficar:", options=opciones_misiones, key="sel_sec1")
-                        
                         indice_sector = int(seleccion.split(" | ")[0].split(" ")[1])
-                        fila_elegida = search1[indice_sector]
                         
                         if st.button("📈 GENERAR DIAGNÓSTICO FOTOMÉTRICO", key="btn_run_an1"):
-                            # 🚨 SEGUNDO ESCUDO DE SEGURIDAD MÁXIMA
                             status_box1 = st.status("📡 Conectando con los archivos fotométricos...", expanded=True)
                             try:
-                                status_box1.update(label="📥 Descargando matriz de píxeles mediante canal seguro...", state="running")
-                                # Usamos la función cached para evitar tumbar la línea con la estrella Monstruo
-                                tpf = descargar_tpf_individual(tic_target1, indice_sector)
+                                status_box1.update(label="📥 Ejecutando computación aislada en la caché de la nube...", state="running")
                                 
-                                status_box1.update(label="✂️ Calculando máscara de umbral de apertura...", state="running")
-                                mascara_estrella = tpf.create_threshold_mask(threshold=3)
+                                # 🚨 AQUÍ OCURRE EL MILAGRO: La función devuelve BYTES, cero errores de Lightkurve
+                                img_bytes, mision_nombre = generar_grafica_individual_bytes(tic_target1, indice_sector)
                                 
-                                lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
-                                lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
-                                
-                                tiempo_inicio = lc_limpia.time.value[0]
-                                lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
-                                lc_plana = lc_recortada.flatten(window_length=101)
-                                
-                                status_box1.update(label="🎨 Graficando resultados fotométricos...", state="running")
-                                fig_an1, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9))
-                                fig_an1.patch.set_facecolor('#0e1117')
-                                
-                                ax1.set_facecolor('#0e1117')
-                                ax1.plot(lc_recortada.time.value, lc_recortada.flux.value, color='gold', linewidth=1.2)
-                                ax1.set_title(f"🔭 HISTORIAL REAL: {tic_target1} ({fila_elegida.mission[0]} - Año {fila_elegida.year[0]})", color='white', fontsize=13, fontweight='bold')
-                                ax1.set_ylabel("Brillo Físico Real", color='white')
-                                ax1.tick_params(colors='white')
-                                ax1.grid(color='#333333', linestyle='--', alpha=0.5)
-                                
-                                ax2.set_facecolor('#0e1117')
-                                ax2.plot(lc_plana.time.value, lc_plana.flux.value, color='cyan', linewidth=0.8)
-                                ax2.set_title(f"🛡️ CURVA APLANADA (Entrada BLS con cadencia de {fila_elegida.exptime[0]}s)", color='cyan', fontsize=11)
-                                ax2.set_ylabel("Brillo Mitigado", color='white')
-                                ax2.tick_params(colors='white')
-                                ax2.grid(color='#333333', linestyle='--', alpha=0.5)
-                                plt.tight_layout()
-                                
-                                status_box1.update(label="🎯 ¡Gráficas listas en pantalla!", state="complete")
-                                st.pyplot(fig_an1)
-                                
-                                img_buf1 = io.BytesIO()
-                                fig_an1.savefig(img_buf1, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=150)
-                                img_buf1.seek(0)
+                                status_box1.update(label="🎯 ¡Procesamiento completado!", state="complete")
+                                st.image(img_bytes, use_container_width=True)
                                 
                                 st.download_button(
                                     label="📥 DESCARGAR GRÁFICA DE SECTOR INDIVIDUAL (PNG)",
-                                    data=img_buf1,
-                                    file_name=f"Historial_{tic_target1.replace(' ', '_')}_Sector_{fila_elegida.mission[0].replace(' ', '_')}.png",
+                                    data=img_buf1 if 'img_buf1' in locals() else img_bytes,
+                                    file_name=f"Historial_TIC_{tic_target1}_Sector_{mision_nombre.replace(' ', '_')}.png",
                                     mime="image/png"
                                 )
-                                plt.close(fig_an1)
                             except Exception as inside_err:
-                                status_box1.update(label="❌ Error en la descarga física.", state="error")
+                                status_box1.update(label="❌ Error de conexión en el servidor.", state="error")
                                 st.error(f"Fallo de descarga física en la NASA: {inside_err}")
                 except Exception as e_an1:
                     st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
@@ -376,96 +447,40 @@ with tab_analisis:
         tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
         
         if tic_id_an2.strip():
-            tic_target2 = f"TIC {tic_id_an2.strip()}"
+            tic_target2 = tic_id_an2.strip()
             if st.button("🚀 INICIAR AUDITORÍA DE TODOS LOS SECTORES", key="btn_run_an2"):
                 status_macro = st.status("🕵️ Probando conexiones con el archivo central...", expanded=True)
                 try:
-                    search2 = buscar_sectores_tesscut(tic_target2)
-                    total_sectores = len(search2)
-                    status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para análisis masivo.")
+                    opciones_misiones2 = buscar_sectores_tesscut_lista(tic_target2)
+                    total_sectores = len(opciones_misiones2)
+                    status_macro.update(label=f"📦 Conexión establecida. Detectados {total_sectores} sectores listos para escaneo de bytes.")
                     
                     for i in range(total_sectores):
-                        fila_sector = search2[i]
-                        mision_nombre = fila_sector.mission[0]
-                        año_observacion = fila_sector.year[0]
-                        
-                        st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: {mision_nombre} (Año {año_observacion})")
+                        st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: Procesando...")
                         
                         try:
-                            # 🚨 MEJORA: También blindamos la descarga masiva iteración por iteración
-                            tpf = descargar_tpf_individual(tic_target2, i)
-                            mascara_estrella = tpf.create_threshold_mask(threshold=3)
+                            # Lanzamos el motor masivo en caché de bytes
+                            resultado = generar_auditoria_sector_bytes(tic_target2, i)
                             
-                            if mascara_estrella.sum() == 0:
-                                st.warning(f"❌ {mision_nombre}: Sin píxeles de luz válidos. Saltando sector.")
+                            if resultado["status"] == "skip":
+                                st.warning(f"❌ Elemento {i+1}: {resultado['reason']}")
                                 continue
                                 
-                            lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
-                            lc_limpia = lc_cruda.remove_nans().remove_outliers().normalize()
-                            
-                            tiempo_inicio = lc_limpia.time.value[0]
-                            lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
-                            
-                            if len(lc_recortada) < 150:
-                                st.warning(f"❌ {mision_nombre}: Puntos de datos insuficientes tras recorte térmico. Saltando sector.")
-                                continue
-                                
-                            lc_plana = lc_recortada.flatten(window_length=101)
-                            
-                            periodograma = lc_plana.to_periodogram(method='bls', period=np.arange(0.5, 15, 0.01))
-                            mejor_periodo = periodograma.period_at_max_power.value
-                            mejor_t0 = periodograma.transit_time_at_max_power.value
-                            indice_maxima_potencia = np.argmax(periodograma.power.value)
-                            fuerza_snr = float(periodograma.snr[indice_maxima_potencia])
-                            
-                            lc_plegada = lc_plana.fold(period=mejor_periodo, epoch_time=mejor_t0)
-                            lc_binned = lc_plegada.bin(time_bin_size=0.01)
-                            
-                            fig_an2, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
-                            fig_an2.patch.set_facecolor('#0e1117')
-                            
-                            ax1.set_facecolor('#0e1117')
-                            tpf.plot(ax=ax1, aperture_mask=mascara_estrella, show_colorbar=False)
-                            ax1.set_title(f"🎯 MIRA DE PÍXELES: {tic_target2} ({mision_nombre})", color='white', fontsize=11)
-                            ax1.tick_params(colors='white')
-                            
-                            ax2.set_facecolor('#0e1117')
-                            ax2.plot(periodograma.period.value, periodograma.power.value, color='gold')
-                            ax2.set_title(f"📊 RADAR BLS - SNR: {fuerza_snr:.1f} | Ritmo Órbita: {mejor_periodo:.4f} días", color='white', fontsize=11)
-                            ax2.tick_params(colors='white')
-                            ax2.grid(color='#333333', linestyle='--', alpha=0.4)
-                            
-                            ax3.set_facecolor('#0e1117')
-                            ax3.scatter(lc_plegada.time.value, lc_plegada.flux.value, color='gray', alpha=0.3, s=2)
-                            if len(lc_binned) > 0:
-                                ax3.plot(lc_binned.time.value, lc_binned.flux.value, color='magenta', linewidth=2.5)
-                            ax3.set_xlim(-0.2, 0.2)
-                            ax3.set_title(f"🛸 HUELLA PLEGADA CRUCIAL (Año {año_observacion})", color='cyan', fontsize=13, fontweight='bold')
-                            ax3.axvline(0, color='red', linestyle=':')
-                            ax3.tick_params(colors='white')
-                            ax3.grid(color='#333333', linestyle='--', alpha=0.5)
-                            plt.tight_layout()
-                            
-                            st.pyplot(fig_an2)
-                            
-                            img_buf2 = io.BytesIO()
-                            fig_an2.savefig(img_buf2, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=120)
-                            img_buf2.seek(0)
+                            st.image(resultado["img_bytes"], use_container_width=True)
                             
                             st.download_button(
-                                label=f"📥 DESCARGAR DIAGNÓSTICO {mision_nombre.replace(' ', '_')} (PNG)",
-                                data=img_buf2,
-                                file_name=f"Diagnostico_{tic_target2.replace(' ', '_')}_{mision_nombre.replace(' ', '_')}.png",
+                                label=f"📥 DESCARGAR DIAGNÓSTICO {resultado['mision'].replace(' ', '_')} (PNG)",
+                                data=resultado["img_bytes"],
+                                file_name=f"Diagnostico_TIC_{tic_target2}_{resultado['mision'].replace(' ', '_')}.png",
                                 mime="image/png",
                                 key=f"btn_dl_masivo_{i}"
                             )
-                            plt.close(fig_an2)
                             st.write("---")
                             
                         except Exception as e_sector:
-                            st.error(f"❌ Fallo crítico procesando sector {mision_nombre}: {e_sector}")
+                            st.error(f"❌ Fallo de redundancia en sector: {e_sector}")
                             continue
                             
-                    status_macro.update(label="🏁 AUDITORÍA COMPLETADA. REPORTES DISPONIBLES EN PANTALLA.", state="complete")
+                    status_macro.update(label="🏁 AUDITORÍA COMPLETADA. REPORTES EN MEMORIA CACHÉ DISPONIBLES.", state="complete")
                 except Exception as e_master:
                     st.error(f"Fallo de conexión maestra: {e_master}")
