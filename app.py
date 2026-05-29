@@ -30,6 +30,15 @@ st.markdown("""
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
+# --- FUNCIÓN CACHED EXTRA-RÁPIDA PARA EXTRAER MATRICES DE LA NASA ---
+@st.cache_data(show_spinner=False)
+def descargar_matrices_ffi(tic_id, sector):
+    search_result = lk.search_tesscut(f"TIC {tic_id}", sector=int(sector))
+    if len(search_result) == 0:
+        return None, None
+    tpf = search_result.download(cutout_size=7)
+    return tpf.time.value, tpf.flux.value
+
 # --- ARQUITECTURA DE PESTAÑAS ---
 tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
     "📡 RADAR AUTÓNOMO", 
@@ -50,12 +59,11 @@ with tab_radar:
         st.subheader("Consola de Observación")
         st.code("Esperando activación del Piloto Automático...")
 
-# --- PESTAÑA 2: REGISTROS HISTÓRICOS (ENTRADA LOCAL) ---
+# --- PESTAÑA 2: REGISTROS HISTÓRICOS ---
 with tab_registros:
     st.header("🔍 Buscador de Archivos TESS (NASA)")
     st.write("Introduzca la numeración de la estrella para extraer sus productos de datos oficiales de TESScut.")
     
-    # Cuadro exclusivo para esta pestaña que nace vacío
     tic_id_reg = st.text_input("ID de la Estrella (TIC):", value="", placeholder="Ej: 55187830", key="txt_id_reg")
     tic_reg_input = tic_id_reg.strip()
     
@@ -93,12 +101,11 @@ with tab_registros:
             except Exception as e:
                 st.error(f"❌ Error de conexión: {e}")
 
-# --- PESTAÑA 3: MAPAS ESTELARES CON ENTRADA LOCAL INDEPENDIENTE ---
+# --- PESTAÑA 3: MAPAS ESTELARES CON REPORTE DE PELIGRO INCORPORADO ---
 with tab_mapas:
     st.header("🎯 Localización y Análisis de Vecindario Estelar (#NEB)")
     st.write("Introduzca el ID de la estrella para desplegar la auditoría perimetral y el análisis de centroide dinámico.")
     
-    # Cuadro exclusivo para los mapas que nace vacío y funciona al margen de los registros
     tic_id_mapas = st.text_input("ID de la Estrella (TIC):", value="", placeholder="Ej: 210192309", key="txt_id_mapas")
     tic_mapas_input = tic_id_mapas.strip()
     
@@ -149,6 +156,7 @@ with tab_mapas:
                     
                     vecinas = df_stars[df_stars['ID'].astype(str) != tic_mapas_input]
                     
+                    # Planos Cartográficos Visuales
                     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                     plt.style.use('dark_background')
                     
@@ -184,6 +192,49 @@ with tab_mapas:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
+                    # 🚨 🦾 NUEVO COMPONENTE: TU LISTA TÁCTICA DE CONTROL DE CONTAMINACIÓN REINTEGRADA
+                    st.write("---")
+                    st.subheader(f"👥 Reporte Forense de Estrellas en el Perímetro ({len(vecinas)} vecinas)")
+                    
+                    # Procesamos la distancia exacta en minutos de arco desde el centro para cada fila
+                    if 'dstArcSec' in df_stars.columns:
+                        df_stars['distance_arcmin'] = df_stars['dstArcSec'] / 60.0
+                    else:
+                        df_stars['distance_arcmin'] = np.sqrt(df_stars['offset_ra']**2 + df_stars['offset_dec']**2) / 60.0
+                    
+                    reporte_lineas = []
+                    for _, estrella in df_stars.iterrows():
+                        id_actual = str(estrella['ID'])
+                        if id_actual == tic_mapas_input:
+                            continue  # Saltamos nuestro propio objetivo
+                            
+                        distancia = estrella['distance_arcmin']
+                        mag_actual = estrella['Tmag']
+                        diferencia_mag = mag_actual - tmag_target
+                        
+                        # Tu algoritmo exacto de clasificación forense de peligro
+                        if distancia < 1.5 and diferencia_mag < 4.0:
+                            peligro = "🚨 ALTO (Muy cerca y brillante)"
+                        elif distancia < 2.0 and diferencia_mag < 2.0:
+                            peligro = "⚠️ MEDIO (Vigilar baches profundos)"
+                        else:
+                            peligro = "🟢 BAJO"
+                            
+                        reporte_lineas.append({
+                            "TIC ID": id_actual,
+                            "Distancia (arcmin)": round(distancia, 3),
+                            "Magnitud TESS": round(mag_actual, 2),
+                            "¿Peligro de Contaminación?": peligro
+                        })
+                    
+                    if reporte_lineas:
+                        df_reporte_final = pd.DataFrame(reporte_lineas)
+                        # Lo ordenamos por proximidad para que veas primero las vecinas más amenazantes
+                        df_reporte_final = df_reporte_final.sort_values(by="Distancia (arcmin)").reset_index(drop=True)
+                        st.dataframe(df_reporte_final, use_container_width=True)
+                    else:
+                        st.info("No se han detectado astros en el radio perimetral.")
+                    
                     # --- PANEL INTERACTIVO DE CENTROIDE (FFI) ---
                     st.write("---")
                     st.markdown("### 📡 Interacción Forense: Análisis de Centroide Dinámico (TESScut FFI)")
@@ -198,48 +249,54 @@ with tab_mapas:
                         t_duracion_input = st.number_input("Duración de la Ventana (Días):", value=0.2, step=0.05, key="num_duracion")
                     
                     if st.button("🎯 EJECUTAR AUDITORÍA FORENSE DE CENTROIDE"):
-                        with st.spinner(f"Cortando FFI de la NASA para TIC {tic_mapas_input} en Sector {sector_input}..."):
-                            try:
-                                search_result_ffi = lk.search_tesscut(f"TIC {tic_mapas_input}", sector=int(sector_input))
-                                if len(search_result_ffi) == 0:
-                                    st.error(f"❌ No se encontraron imágenes panorámicas de TESScut para el Sector {sector_input} en esta estrella.")
-                                else:
-                                    tpf = search_result_ffi.download(cutout_size=7)
-                                    tiempo = tpf.time.value
-                                    flux = tpf.flux.value
-                                    
-                                    en_transito = (tiempo >= (t_centro_input - t_duracion_input/2)) & (tiempo <= (t_centro_input + t_duracion_input/2))
-                                    fuera_transito = ~en_transito
-                                    valid_frames = ~np.isnan(np.sum(flux, axis=(1,2)))
-                                    
-                                    foto_fuera = np.nanmean(flux[fuera_transito & valid_frames, :, :], axis=0)
-                                    foto_dentro = np.nanmean(flux[en_transito & valid_frames, :, :], axis=0)
-                                    imagen_diferencia = foto_fuera - foto_dentro
-                                    
-                                    fig2, axes2 = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
-                                    plt.style.use('dark_background')
-                                    
-                                    im1 = axes2[0].imshow(foto_fuera, origin='lower', cmap='viridis')
-                                    axes2[0].set_title("1. Brillo Normal (Fuera)", fontsize=11)
-                                    fig2.colorbar(im1, ax=axes2[0], label='Flujo')
-                                    
-                                    im2 = axes2[1].imshow(foto_dentro, origin='lower', cmap='viridis')
-                                    axes2[1].set_title("2. Durante el Evento", fontsize=11)
-                                    fig2.colorbar(im2, ax=axes2[1], label='Flujo')
-                                    
-                                    im3 = axes2[2].imshow(imagen_diferencia, origin='lower', cmap='inferno')
-                                    axes2[2].set_title("3. MAPA DE IMPACTO DE CAÍDA (Resta)", fontsize=11, color='cyan', fontweight='bold')
-                                    fig2.colorbar(im3, ax=axes2[2], label='Luz Modificada')
-                                                    
-                                    centro_y, centro_x = foto_fuera.shape[0] // 2, foto_fuera.shape[1] // 2
-                                    axes2[2].plot(centro_x, centro_y, 'r*', markersize=14, label=f'TIC {tic_mapas_input}')
-                                    axes2[2].legend(loc='upper left')
-                                    
-                                    plt.suptitle(f"Análisis Forense de Centroide FFI - TIC {tic_mapas_input} (Sector {sector_input})", fontsize=13, y=0.98, color='#f8fafc', fontweight='bold')
-                                    plt.tight_layout()
-                                    st.pyplot(fig2)
-                            except Exception as ffi_err:
-                                st.error(f"❌ Error al procesar la matriz de centroide: {ffi_err}")
+                        status_box = st.status("📡 Iniciando subsistema forense...", expanded=True)
+                        try:
+                            status_box.update(label="📡 Conectando con los servidores MAST de la NASA...", state="running")
+                            tiempo, flux = descargar_matrices_ffi(tic_mapas_input, sector_input)
+                            
+                            if tiempo is None:
+                                status_box.update(label="❌ Descarga fallida. Sector no disponible.", state="error")
+                                st.error(f"❌ No se encontraron imágenes panorámicas de TESScut para el Sector {sector_input} en esta estrella.")
+                            else:
+                                status_box.update(label="✂️ Recorte de píxeles recibido. Sincronizando fotogramas...", state="running")
+                                en_transito = (tiempo >= (t_centro_input - t_duracion_input/2)) & (tiempo <= (t_centro_input + t_duracion_input/2))
+                                fuera_transito = ~en_transito
+                                valid_frames = ~np.isnan(np.sum(flux, axis=(1,2)))
+                                
+                                foto_fuera = np.nanmean(flux[fuera_transito & valid_frames, :, :], axis=0)
+                                foto_dentro = np.nanmean(flux[en_transito & valid_frames, :, :], axis=0)
+                                
+                                status_box.update(label="🧮 Ejecutando ecuación de diferencia (Resta de matrices)...", state="running")
+                                imagen_diferencia = foto_fuera - foto_dentro
+                                
+                                status_box.update(label="🎨 Renderizando mapa de calor de impacto...", state="running")
+                                fig2, axes2 = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
+                                plt.style.use('dark_background')
+                                
+                                im1 = axes2[0].imshow(foto_fuera, origin='lower', cmap='viridis')
+                                axes2[0].set_title("1. Brillo Normal (Fuera)", fontsize=11)
+                                fig2.colorbar(im1, ax=axes2[0], label='Flujo')
+                                
+                                im2 = axes2[1].imshow(foto_dentro, origin='lower', cmap='viridis')
+                                axes2[1].set_title("2. Durante el Evento", fontsize=11)
+                                fig2.colorbar(im2, ax=axes2[1], label='Flujo')
+                                
+                                im3 = axes2[2].imshow(imagen_diferencia, origin='lower', cmap='inferno')
+                                axes2[2].set_title("3. MAPA DE IMPACTO DE CAÍDA (Resta)", fontsize=11, color='cyan', fontweight='bold')
+                                fig2.colorbar(im3, ax=axes2[2], label='Luz Modificada')
+                                                
+                                centro_y, centro_x = foto_fuera.shape[0] // 2, foto_fuera.shape[1] // 2
+                                axes2[2].plot(centro_x, centro_y, 'r*', markersize=14, label=f'TIC {tic_mapas_input}')
+                                axes2[2].legend(loc='upper left')
+                                
+                                plt.suptitle(f"Análisis Forense de Centroide FFI - TIC {tic_mapas_input} (Sector {sector_input})", fontsize=13, y=0.98, color='#f8fafc', fontweight='bold')
+                                plt.tight_layout()
+                                
+                                status_box.update(label="🎯 ¡Auditoría de centroide completada con éxito!", state="complete")
+                                st.pyplot(fig2)
+                        except Exception as ffi_err:
+                            status_box.update(label="❌ Cortocorticuito en el procesamiento matemático.", state="error")
+                            st.error(f"❌ Error al procesar la matriz de centroide: {ffi_err}")
             except Exception as e:
                 st.error(f"❌ Error al conectar con los catálogos: {e}")
 
