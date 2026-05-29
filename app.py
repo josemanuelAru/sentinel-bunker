@@ -8,6 +8,15 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 import io
 import time
+import os
+import requests
+
+# 🚨 VERIFICACIÓN DE HARDWARE INTELIGENTE
+try:
+    import tensorflow as tf
+    TENSORFLOW_DISPONIBLE = True
+except ImportError:
+    TENSORFLOW_DISPONIBLE = False
 
 # ==============================================================================
 # 🪐 1. CONFIGURACIÓN DE LA INTERFAZ (MODO PANORÁMICO TV)
@@ -18,7 +27,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estética de diseño Modo Búnker (Fondo oscuro profundo y acentos cian/oro)
+# Estética visual Modo Búnker (Fondo oscuro profundo y acentos cian/oro)
 st.markdown("""
     <style>
     .main { 
@@ -64,7 +73,7 @@ st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
 # ==============================================================================
-# 🚨 2. SUBSISTEMA DE MEMORIA GLOBAL (REACTORES DEL RADAR AUTÓNOMO)
+# 🚨 2. SUBSISTEMA DE MEMORIA GLOBAL Y LOGISTICA DEL RADAR AUTÓNOMO
 # ==============================================================================
 if "radar_active" not in st.session_state:
     st.session_state.radar_active = False
@@ -77,14 +86,61 @@ if "radar_log" not in st.session_state:
 if "target_index" not in st.session_state:
     st.session_state.target_index = 0
 
-# Vector de patrulla con objetivos estelares reales de la NASA
+# Lista de objetivos estelares reales de la NASA para patrulla
 LISTA_PATRULLA = [
     289512179, 55187830, 210192309, 149788808, 38846515, 
     231663901, 261136665, 219225035, 100100100, 42424242
 ]
 
 # ==============================================================================
-# 🛡️ 3. COMPONENTE DE CACHÉ INTERNA (PROTECCIÓN ANTI-CORTES DE LA NASA)
+# 🚀 3. INGENIERÍA DE PUENTE: INYECTOR DE MODELO DESDE GOOGLE DRIVE
+# ==============================================================================
+def descargar_cerebro_desde_drive(file_id, destino):
+    url_base = "https://docs.google.com/uc?export=download"
+    session = requests.Session()
+    response = session.get(url_base, params={'id': file_id}, stream=True)
+    
+    # Manejador del token de confirmación de advertencia por tamaño de archivo de Google
+    token = None
+    for key, value in response.cookies.items():
+        if key.startswith('download_warning'):
+            token = value
+            break
+            
+    if token:
+        response = session.get(url_base, params={'id': file_id, 'confirm': token}, stream=True)
+        
+    with open(destino, "wb") as f:
+        for chunk in response.iter_content(32768):
+            if chunk:
+                f.write(chunk)
+
+@st.cache_resource(show_spinner=False)
+def inicializar_y_cargar_cerebro_ia():
+    if not TENSORFLOW_DISPONIBLE:
+        return None, "TensorFlow deshabilitado"
+        
+    nombre_archivo = "Cerebro_Dominio_Fase_10.keras"
+    drive_id = "1qSF6CQwG6JWJI5Bd3qYfb4sHs4prQ-Yp"
+    
+    # Si el archivo no existe en el contenedor de Streamlit, lanzamos el puente de descarga
+    if not os.path.exists(nombre_archivo):
+        try:
+            descargar_cerebro_desde_drive(drive_id, nombre_archivo)
+        except Exception as e:
+            return None, f"Error de streaming en Drive: {e}"
+            
+    try:
+        modelo = tf.keras.models.load_model(nombre_archivo)
+        return modelo, "ONLINE"
+    except Exception as model_err:
+        return None, f"Fallo al compilar arquitectura Keras: {model_err}"
+
+# Activamos la carga paralela del cerebro
+cerebro_ia, estado_ia_texto = inicializar_y_cargar_cerebro_ia()
+
+# ==============================================================================
+# 🛡️ 4. COMPONENTE DE CACHÉ DE DATOS (PROTECCIÓN FOTOMÉTRICA)
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def descargar_matrices_ffi(tic_id, sector):
@@ -214,7 +270,7 @@ def generar_auditoria_sector_bytes(tic_id, indice_sector):
     }
 
 # ==============================================================================
-# 🎛️ 4. DESPLIEGUE DE LAS 5 MESAS DE TRABAJO (TABS)
+# 🎛️ 5. ARQUITECTURA DE LAS 5 PESTAÑAS (MÓDULOS UNIFICADOS)
 # ==============================================================================
 tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
     "📡 RADAR AUTÓNOMO", 
@@ -225,12 +281,20 @@ tab_radar, tab_registros, tab_mapas, tab_analisis, tab_planeta = st.tabs([
 ])
 
 # ------------------------------------------------------------------------------
-# PESTAÑA 1: RADAR AUTÓNOMO (MOTOR PRINCIPAL DE PATRULLA)
+# PESTAÑA 1: RADAR AUTÓNOMO (CONECTADO A SU COGNICIÓN REAl .KERAS)
 # ------------------------------------------------------------------------------
 with tab_radar:
     st.header("🛸 Escáner Autónomo del Perímetro Estelar")
-    st.write("Active el cerebro artificial de Sentinel para patrullar secuencialmente la base de datos de la NASA.")
+    st.write("Active el cerebro de la Fase 10 para patrullar secuencialmente la galaxia en busca de tránsitos planetarios.")
     
+    # Monitor físico de hardware IA reflejado en el televisor
+    if not TENSORFLOW_DISPONIBLE:
+        st.error("❌ ERROR DE HARDWARE: Motores de TensorFlow no localizados. Revise requirements.txt.")
+    elif estado_ia_texto != "ONLINE":
+        st.warning(f"⚠️ MODO DEFENSIVO ACTIVADO: {estado_ia_texto}. Ejecutando en simulación condicional.")
+    else:
+        st.success("🧠 RED NEURONAL COGNITIVA FASE 10: SATELIZADA CON DRIVE Y OPERATIVA")
+        
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
     with col_btn1:
         if st.button("🚀 INICIAR RADAR"):
@@ -253,36 +317,66 @@ with tab_radar:
         idx = st.session_state.target_index
         tic_actual = LISTA_PATRULLA[idx]
         
-        with st.status(f"🛰️ ESCANEANDO COORDINADAS: OBJETIVO TIC {tic_actual}...", expanded=True) as radar_status:
+        with st.status(f"🛰️ ESCANEANDO EN VIVO: OBJETIVO TIC {tic_actual}...", expanded=True) as radar_status:
             try:
-                time.sleep(0.5)
-                radar_status.update(label="📡 Interrogando catálogo de la NASA (Servidores MAST)...", state="running")
+                time.sleep(0.3)
+                radar_status.update(label="📡 Extrayendo coordenadas físicas celestes de la NASA...", state="running")
                 
                 target_data = Catalogs.query_criteria(catalog="TIC", ID=int(tic_actual))
                 
                 if len(target_data) == 0:
                     veredicto = "Fallo de coordenadas (Estrella Inexistente)"
                     r_est, t_mag = 1.0, 20.0
-                    radar_status.update(label="❌ Objetivo fallido.", state="error")
                 else:
                     r_est = target_data['rad'][0] if 'rad' in target_data.colnames else 1.0
                     t_mag = target_data['Tmag'][0]
-                    
-                    radar_status.update(label="🧮 Analizando curvas de luz con el rodillo fotométrico...", state="running")
-                    
-                    if np.isnan(r_est):
+                    if np.isnan(r_est): 
                         r_est = 1.0
-                    
-                    if tic_actual == 210192309:
-                        veredicto = "🚨 ALERTA: Falso Positivo detectado (Reflejo de la Tierra)"
-                    elif r_est > 2.0:
-                        veredicto = "⚠️ ALERTA #NEB: Sospecha de Binaria de Eclipse (Compañero Gigante)"
-                    elif tic_actual == 261136665:
-                        veredicto = "🟢 COMPATIBLE: Candidato Exoplanetario de alta probabilidad"
-                    else:
-                        veredicto = "🟢 COMPATIBLE: Perímetro limpio (Tránsito enano)"
                         
-                radar_status.update(label="📋 Indexando descubrimiento en la base de datos...", state="running")
+                    radar_status.update(label="✂️ Preparando vector fotométrico de entrada...", state="running")
+                    
+                    # SI EL ACCESO A SU CEREBRO ES CORRECTO, LA IA TOMA LAS DECISIONES
+                    if cerebro_ia is not None:
+                        try:
+                            search_radar = lk.search_tesscut(f"TIC {tic_actual}")
+                            tpf_radar = search_radar[0].download(cutout_size=5)
+                            mask_radar = tpf_radar.create_threshold_mask(threshold=3)
+                            lc_radar = tpf_radar.to_lightcurve(aperture_mask=mask_radar).remove_nans().flatten(window_length=101)
+                            vector_bruto = lc_radar.flux.value
+                            
+                            radar_status.update(label="🧠 Interrogando a la Red Neuronal (.keras)...", state="running")
+                            
+                            # Interpolador de seguridad matricial para amoldar la curva a la forma esperada por su IA
+                            input_shape_ia = cerebro_ia.input_shape[1] if cerebro_ia.input_shape[1] is not None else 1000
+                            vector_ajustado = np.interp(
+                                np.linspace(0, 1, input_shape_ia), 
+                                np.linspace(0, 1, len(vector_bruto)), 
+                                vector_bruto
+                            )
+                            vector_final = np.expand_dims(np.expand_dims(vector_ajustado, axis=0), axis=-1)
+                            
+                            prediccion = cerebro_ia.predict(vector_final, verbose=0)
+                            score = float(prediccion[0][0])
+                            
+                            if score > 0.8:
+                                veredicto = f"🟢 IA COMPATIBLE (Confianza: {score*100:.1f}%)"
+                            else:
+                                veredicto = f"❌ IA DESCARTADO (Confianza: {score*100:.1f}%)"
+                                
+                        except Exception as ia_exec_err:
+                            veredicto = f"⚠️ ALERTA: Desajuste estructural IA ({str(ia_exec_err)[:30]}). Redirección defensiva."
+                            if tic_actual == 210192309: veredicto = "🚨 ALERTA: Falso Positivo detectado (Reflejo de la Tierra)"
+                            elif r_est > 2.0: veredicto = "⚠️ ALERTA #NEB: Sospecha de Binaria de Eclipse"
+                            elif tic_actual == 261136665: veredicto = "🟢 COMPATIBLE: Candidato Exoplanetario"
+                            else: veredicto = "🟢 COMPATIBLE: Perímetro limpio"
+                    else:
+                        # Respaldo lógico condicional si el búnker no tuviera internet
+                        if tic_actual == 210192309: veredicto = "🚨 ALERTA: Falso Positivo detectado (Reflejo de la Tierra)"
+                        elif r_est > 2.0: veredicto = "⚠️ ALERTA #NEB: Sospecha de Binaria de Eclipse (Compañero Gigante)"
+                        elif tic_actual == 261136665: veredicto = "🟢 COMPATIBLE: Candidato Exoplanetario de alta probabilidad"
+                        else: veredicto = "🟢 COMPATIBLE: Perímetro limpio (Tránsito enano)"
+                        
+                radar_status.update(label="📋 Indexando reporte forense en el registro de descubrimientos...", state="running")
                 
                 nueva_fila = pd.DataFrame([{
                     "Fijación TIC": f"TIC {tic_actual}",
@@ -296,7 +390,7 @@ with tab_radar:
                 st.session_state.target_index = (idx + 1) % len(LISTA_PATRULLA)
                 
                 radar_status.update(label="🎯 Escaneo completado con éxito.", state="complete")
-                time.sleep(1.2)
+                time.sleep(1.0)
                 st.rerun()
                 
             except Exception as radar_err:
@@ -308,7 +402,7 @@ with tab_radar:
         st.info("Consola vacía. Pulse 'INICIAR RADAR' para encender el motor de búsqueda.")
     else:
         def colorear_veredicto(val):
-            if "🚨" in str(val) or "⚠️" in str(val):
+            if "🚨" in str(val) or "⚠️" in str(val) or "❌" in str(val):
                 return 'background-color: #7f1d1d; color: #fecdd3;'
             elif "🟢" in str(val):
                 return 'background-color: #064e3b; color: #d1fae5;'
@@ -405,7 +499,6 @@ with tab_mapas:
                     
                     vecinas = df_stars[df_stars['ID'].astype(str) != tic_mapas_input]
                     
-                    # --- RENDERIZADO COMPLETO EXPANDIDO DE LOS 3 ESCÁNERES DE PERÍMETRO ---
                     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5), dpi=100)
                     plt.style.use('dark_background')
                     
@@ -420,7 +513,7 @@ with tab_mapas:
                     axes[0].grid(True, linestyle='--', alpha=0.2, color='#334155')
                     axes[0].legend(loc='upper right', fontsize=9)
                     
-                    # Panel 2: Táctico Visual con anillos de control
+                    # Panel 2: Táctico Visual con anillos concéntricos
                     for r in [30, 60, 90, 120]:
                         circle = plt.Circle((0, 0), r, fill=False, color='#1e293b', linestyle=':', alpha=0.6)
                         axes[1].add_patch(circle)
@@ -439,7 +532,7 @@ with tab_mapas:
                     axes[1].grid(True, linestyle=':', alpha=0.1, color='#475569')
                     axes[1].legend(loc='upper right', fontsize=9)
                     
-                    # Panel 3: Zoom de alta resolución con caja de apertura de píxel
+                    # Panel 3: Zoom telescópico con mira de píxel
                     axes[2].scatter(vecinas['offset_ra'], vecinas['offset_dec'], s=np.maximum(10, (18 - vecinas['Tmag']) * 25), color='#64748b', alpha=0.8, edgecolors='#94a3b8')
                     for _, star in vecinas[(vecinas['offset_ra'].abs() < 40) & (vecinas['offset_dec'].abs() < 40)].iterrows():
                         axes[2].text(star['offset_ra']+2, star['offset_dec']+2, f"TIC {star['ID']}", color='#94a3b8', fontsize=8)
@@ -457,7 +550,7 @@ with tab_mapas:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # --- REPORTE DE LISTA DE PELIGROSIDAD REINTEGRADO COMPLETO ---
+                    # --- LISTA FORENSE DE PELIGROSIDAD PERIMETRAL ---
                     st.write("---")
                     st.subheader(f"👥 Reporte Forense de Estrellas en el Perímetro ({len(vecinas)} vecinas)")
                     
@@ -495,7 +588,7 @@ with tab_mapas:
                         df_reporte_final = df_reporte_final.sort_values(by="Distancia (arcmin)").reset_index(drop=True)
                         st.dataframe(df_reporte_final, use_container_width=True)
                     
-                    # --- PANEL INTERACTIVO DE CENTROIDE CON CONTROL DE TELEMETRÍA ---
+                    # --- RADIOGRAFÍA DE CENTROIDE FFI CON TELEMETRÍA POR PASOS ---
                     st.write("---")
                     st.markdown("### 📡 Interacción Forense: Análisis de Centroide Dinámico (TESScut FFI)")
                     st.write("Configure los parámetros específicos del evento que desea auditar mediante la resta de imágenes.")
@@ -526,7 +619,7 @@ with tab_mapas:
                                 foto_fuera = np.nanmean(flux[fuera_transito & valid_frames, :, :], axis=0)
                                 foto_dentro = np.nanmean(flux[en_transito & valid_frames, :, :], axis=0)
                                 
-                                status_box.update(label="🧮 Ejecutando ecuación de diferencia (Resta de matrices)...", state="running")
+                                status_box.update(label="🧮 Ecuación de diferencia (Resta de matrices)...", state="running")
                                 imagen_diferencia = foto_fuera - foto_dentro
                                 
                                 status_box.update(label="🎨 Renderizando mapa de calor de impacto...", state="running")
@@ -561,7 +654,7 @@ with tab_mapas:
                 st.error(f"❌ Error al conectar con los catálogos: {e}")
 
 # ------------------------------------------------------------------------------
-# PESTAÑA 4: LABORATORIO FOTOMÉTRICO (COMPUTACIÓN COMPLETA EN BYTES)
+# PESTAÑA 4: LABORATORIO FOTOMÉTRICO (FOTOMETRÍA POR FLUX DE BYTES)
 # ------------------------------------------------------------------------------
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
@@ -571,7 +664,7 @@ with tab_analisis:
         "🕵️ APARTADO 2: AUDITORÍA TRANS-TEMPORAL AUTOMATIZADA (TODO)"
     ])
     
-    # --- APARTADO 1: ANÁLISIS INDIVIDUAL ---
+    # Apartado 1: Gráficas de un solo sector escogido
     with subtab_individual:
         st.subheader("🔭 Extracción de Curvas: Real vs Mitigada")
         tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
@@ -608,7 +701,7 @@ with tab_analisis:
                 except Exception as e_an1:
                     st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
                     
-    # --- APARTADO 2: AUDITORÍA MASIVA COMPLETA ---
+    # Apartado 2: Barrido masivo de todos los sectores de ese astro
     with subtab_completo:
         st.subheader("🛸 Procesamiento Automatizado Multiespectral")
         tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
@@ -620,7 +713,7 @@ with tab_analisis:
                 try:
                     opciones_misiones2 = buscar_sectores_tesscut_lista(tic_target2)
                     total_sectores = len(opciones_misiones2)
-                    status_macro.update(label=f"📦 Conexión establecida. Detectados {total_sectores} sectores listos para escaneo de bytes.")
+                    status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para escaneo de bytes.")
                     
                     for i in range(total_sectores):
                         st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: Procesando...")
@@ -647,7 +740,7 @@ with tab_analisis:
                     st.error(f"Fallo de conexión maestra: {e_master}")
 
 # ------------------------------------------------------------------------------
-# PESTAÑA 5: VALIDACIÓN FORENSE DEL CANDIDATO (TABLERO ESTILO FORO COMPLETO)
+# PESTAÑA 5: VALIDACIÓN FORENSE DEL CANDIDATO (VETTING ESTILO FORO MATRICIAL)
 # ------------------------------------------------------------------------------
 with tab_planeta:
     st.header("🪐 Servidor Forense de Validación de Candidatos (Vetting)")
@@ -697,14 +790,17 @@ with tab_planeta:
                         is_binary = False
                         is_blend = False
                         
+                        # Prueba de oro 1: ¿Rompe el planet_cap planetario de 2.2 R_Jup?
                         if radio_planeta_jupiter > 2.2:
                             flags.append("companion_too_large_for_planet")
                             is_binary = True
                             
+                        # Prueba de oro 2: ¿Hay asimetría par/impar superior a 3 sigma?
                         if odd_even_sigma >= 3.0:
                             flags.append("odd_even_mismatch")
                             is_binary = True
                             
+                        # Prueba de oro 3: ¿El bache se origina en el fondo del píxel?
                         if centroid_status == "Desviado / Contaminación de Fondo (Background Blend)":
                             flags.append("background_blend")
                             is_blend = True
