@@ -31,14 +31,30 @@ st.markdown("""
 st.title("🛰️ PROYECTO SENTINEL: Centro de Mando Cloud")
 st.write("---")
 
-# --- FUNCIÓN CACHED EXTRA-RÁPIDA PARA EXTRAER MATRICES DE LA NASA ---
+# --- 🚨 FUNCIONES CACHED ULTRA-RÁPIDAS (PROTECCIÓN ANTI-CAÍDAS) ---
 @st.cache_data(show_spinner=False)
 def descargar_matrices_ffi(tic_id, sector):
-    search_result = lk.search_tesscut(f"TIC {tic_id}", sector=int(sector))
-    if len(search_result) == 0:
+    try:
+        search_result = lk.search_tesscut(f"TIC {tic_id}", sector=int(sector))
+        if len(search_result) == 0:
+            return None, None
+        tpf = search_result.download(cutout_size=7)
+        return tpf.time.value, tpf.flux.value
+    except:
         return None, None
-    tpf = search_result.download(cutout_size=7)
-    return tpf.time.value, tpf.flux.value
+
+@st.cache_data(show_spinner=False)
+def buscar_sectores_tesscut(tic_target):
+    # Almacena la lista de sectores para no saturar al servidor MAST con búsquedas repetidas
+    return lk.search_tesscut(tic_target)
+
+@st.cache_data(show_spinner=False)
+def descargar_tpf_individual(tic_target, indice_sector, size=5):
+    # Descarga de forma segura y aisla el TargetPixelFile en la memoria de la app
+    search = lk.search_tesscut(tic_target)
+    fila = search[indice_sector]
+    tpf = fila.download(cutout_size=size)
+    return tpf
 
 # --- ARQUITECTURA DE PESTAÑAS ---
 tab_radar, tab_registros, tab_mapas, tab_analisis = st.tabs([
@@ -73,7 +89,7 @@ with tab_registros:
     else:
         with st.spinner(f"Interrogando a los servidores MAST (TESScut) para TIC {tic_reg_input}..."):
             try:
-                search_result = lk.search_tesscut(f"TIC {tic_reg_input}")
+                search_result = buscar_sectores_tesscut(f"TIC {tic_reg_input}")
                 if len(search_result) == 0:
                     st.warning(f"⚠️ No se han encontrado recortes de TESScut para la estrella TIC {tic_reg_input}.")
                 else:
@@ -268,32 +284,29 @@ with tab_mapas:
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 
-# --- PESTAÑA 4: ANÁLISIS FOTOMÉTRICO Y DESCARGAS (¡NUEVO MÓDULO INTEGRADO!) ---
+# --- PESTAÑA 4: ANÁLISIS FOTOMÉTRICO (AHORA CON BLINDAJE DE CACHÉ ANTI-CORTES) ---
 with tab_analisis:
     st.header("📊 Laboratorio Fotométrico y Curvas de Luz Avanzadas")
     
-    # Creamos sub-apartados independientes mediante pestañas de interfaz interna
     subtab_individual, subtab_completo = st.tabs([
         "🔬 APARTADO 1: ANÁLISIS DE SECTOR INDIVIDUAL", 
         "🕵️ APARTADO 2: AUDITORÍA TRANS-TEMPORAL AUTOMATIZADA (TODO)"
     ])
     
-    # ==============================================================================
-    # APARTADO 1: ANÁLISIS INDIVIDUAL CON SELECTOR DINÁMICO
-    # ==============================================================================
+    # --- APARTADO 1: ANÁLISIS INDIVIDUAL ---
     with subtab_individual:
         st.subheader("🔭 Extracción de Curvas: Real vs Mitigada")
         tic_id_an1 = st.text_input("ID de la Estrella a Analizar (TIC):", value="", placeholder="Ej: 289512179", key="txt_an1")
         
         if tic_id_an1.strip():
             tic_target1 = f"TIC {tic_id_an1.strip()}"
-            with st.spinner("Buscando sectores disponibles en los servidores de la NASA..."):
+            with st.sidebar if False else st.container():
                 try:
-                    search1 = lk.search_tesscut(tic_target1)
+                    # 🚨 MEJORA: Búsqueda protegida por caché para evitar Error 104
+                    search1 = buscar_sectores_tesscut(tic_target1)
                     if len(search1) == 0:
                         st.warning("❌ No se encontraron productos de datos para esta estrella.")
                     else:
-                        # Creamos un menú desplegable dinámico para que elijas el sector de esa estrella
                         opciones_misiones = [f"Índice {idx} | {fila.mission[0]} (Año {fila.year[0]})" for idx, fila in enumerate(search1)]
                         seleccion = st.selectbox("Seleccione el Sector Histórico que desea graficar:", options=opciones_misiones, key="sel_sec1")
                         
@@ -301,8 +314,14 @@ with tab_analisis:
                         fila_elegida = search1[indice_sector]
                         
                         if st.button("📈 GENERAR DIAGNÓSTICO FOTOMÉTRICO", key="btn_run_an1"):
-                            with st.spinner("Procesando fotometría de apertura y aplicando rodillo flatten..."):
-                                tpf = fila_elegida.download(cutout_size=5)
+                            # 🚨 SEGUNDO ESCUDO DE SEGURIDAD MÁXIMA
+                            status_box1 = st.status("📡 Conectando con los archivos fotométricos...", expanded=True)
+                            try:
+                                status_box1.update(label="📥 Descargando matriz de píxeles mediante canal seguro...", state="running")
+                                # Usamos la función cached para evitar tumbar la línea con la estrella Monstruo
+                                tpf = descargar_tpf_individual(tic_target1, indice_sector)
+                                
+                                status_box1.update(label="✂️ Calculando máscara de umbral de apertura...", state="running")
                                 mascara_estrella = tpf.create_threshold_mask(threshold=3)
                                 
                                 lc_cruda = tpf.to_lightcurve(aperture_mask=mascara_estrella)
@@ -312,7 +331,7 @@ with tab_analisis:
                                 lc_recortada = lc_limpia[lc_limpia.time.value > (tiempo_inicio + 1.5)]
                                 lc_plana = lc_recortada.flatten(window_length=101)
                                 
-                                # Renderizado exacto estilo búnker oscuro
+                                status_box1.update(label="🎨 Graficando resultados fotométricos...", state="running")
                                 fig_an1, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9))
                                 fig_an1.patch.set_facecolor('#0e1117')
                                 
@@ -331,9 +350,9 @@ with tab_analisis:
                                 ax2.grid(color='#333333', linestyle='--', alpha=0.5)
                                 plt.tight_layout()
                                 
+                                status_box1.update(label="🎯 ¡Gráficas listas en pantalla!", state="complete")
                                 st.pyplot(fig_an1)
                                 
-                                # Exportación directa a flujo de bytes para descargas locales en Smart TV o PC
                                 img_buf1 = io.BytesIO()
                                 fig_an1.savefig(img_buf1, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=150)
                                 img_buf1.seek(0)
@@ -345,12 +364,13 @@ with tab_analisis:
                                     mime="image/png"
                                 )
                                 plt.close(fig_an1)
+                            except Exception as inside_err:
+                                status_box1.update(label="❌ Error en la descarga física.", state="error")
+                                st.error(f"Fallo de descarga física en la NASA: {inside_err}")
                 except Exception as e_an1:
                     st.error(f"Fallo en el reconocimiento fotométrico: {e_an1}")
                     
-    # ==============================================================================
-    # APARTADO 2: AUDITORÍA TRANS-TEMPORAL COMPLETA DE TODOS LOS SECTORES
-    # ==============================================================================
+    # --- APARTADO 2: AUDITORÍA MASIVA ---
     with subtab_completo:
         st.subheader("🛸 Procesamiento Automatizado Multiespectral")
         tic_id_an2 = st.text_input("ID de la Estrella para Auditoría Masiva (TIC):", value="", placeholder="Ej: 289512179", key="txt_an2")
@@ -360,11 +380,10 @@ with tab_analisis:
             if st.button("🚀 INICIAR AUDITORÍA DE TODOS LOS SECTORES", key="btn_run_an2"):
                 status_macro = st.status("🕵️ Probando conexiones con el archivo central...", expanded=True)
                 try:
-                    search2 = lk.search_tesscut(tic_target2)
+                    search2 = buscar_sectores_tesscut(tic_target2)
                     total_sectores = len(search2)
                     status_macro.update(label=f"📦 Conexión establecida. Encontrados {total_sectores} sectores listos para análisis masivo.")
                     
-                    # Bucle táctico para procesar secuencialmente cada sector
                     for i in range(total_sectores):
                         fila_sector = search2[i]
                         mision_nombre = fila_sector.mission[0]
@@ -373,7 +392,8 @@ with tab_analisis:
                         st.markdown(f"### ⏳ Sector {i+1}/{total_sectores}: {mision_nombre} (Año {año_observacion})")
                         
                         try:
-                            tpf = fila_sector.download(cutout_size=5)
+                            # 🚨 MEJORA: También blindamos la descarga masiva iteración por iteración
+                            tpf = descargar_tpf_individual(tic_target2, i)
                             mascara_estrella = tpf.create_threshold_mask(threshold=3)
                             
                             if mascara_estrella.sum() == 0:
@@ -392,7 +412,6 @@ with tab_analisis:
                                 
                             lc_plana = lc_recortada.flatten(window_length=101)
                             
-                            # Radar BLS
                             periodograma = lc_plana.to_periodogram(method='bls', period=np.arange(0.5, 15, 0.01))
                             mejor_periodo = periodograma.period_at_max_power.value
                             mejor_t0 = periodograma.transit_time_at_max_power.value
@@ -402,7 +421,6 @@ with tab_analisis:
                             lc_plegada = lc_plana.fold(period=mejor_periodo, epoch_time=mejor_t0)
                             lc_binned = lc_plegada.bin(time_bin_size=0.01)
                             
-                            # Construcción exacta del reporte triple de diagnóstico
                             fig_an2, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
                             fig_an2.patch.set_facecolor('#0e1117')
                             
@@ -430,7 +448,6 @@ with tab_analisis:
                             
                             st.pyplot(fig_an2)
                             
-                            # Botón de descarga individual acoplado a este sector específico de la iteración
                             img_buf2 = io.BytesIO()
                             fig_an2.savefig(img_buf2, format='png', facecolor='#0e1117', bbox_inches='tight', dpi=120)
                             img_buf2.seek(0)
